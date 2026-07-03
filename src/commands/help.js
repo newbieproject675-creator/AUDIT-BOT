@@ -1,104 +1,216 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { loadCommands } = require("../loadCommands");
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  MessageFlags
+} = require("discord.js");
 
-// IMPORTANT: This command builds its list automatically from every other
-// command file's own .setDescription() text and minTier value. That means
-// you never need to manually update /help when adding or changing a
-// command — as long as the new command file sets a clear description and
-// a minTier, it'll show up here correctly on its own.
-//
-// DESIGN NOTE ON SCALING: each tier gets its OWN embed, rather than all
-// tiers sharing fields inside one embed. Discord's 6000-character limit
-// applies to an embed's ENTIRE combined content (title + description +
-// every field together) — not per-field. Cramming all tiers into one
-// embed meant the bot's total command text was competing for a single
-// shared 6000-character budget, which could break as more commands were
-// added (this happened once already). Giving each tier its own embed
-// means each one gets its OWN fresh 6000-character budget — for routine
-// bot growth this should never need touching again. Discord allows up to
-// 10 embeds per message, and we only use 5 (intro + 4 tiers), so there's
-// also room to add more tiers/categories later without restructuring.
-//
-// If a SINGLE tier somehow still grows past ~3500 characters on its own
-// (a lot of commands), chunkLines() below will automatically split that
-// tier across multiple same-titled embeds too, as a second safety net.
+// ── Category definitions ────────────────────────────────────────────────────
+// Each category has a label (shown on the button), a colour, an emoji, and
+// an explicit list of commands. Commands appear in the order listed here.
+// Adding a new command? Just add its name to the relevant category list below.
 
-const TIER_ORDER = ["member", "mentor", "government", "administrator"];
-const TIER_LABELS = {
-  member: "🟢 Member — anyone can use these",
-  mentor: "🟡 Mentor",
-  government: "🔵 Government",
-  administrator: "🔴 Administrator"
-};
-const TIER_COLORS = {
-  member: 0x2ecc71,
-  mentor: 0xf1c40f,
-  government: 0x3498db,
-  administrator: 0xe74c3c
-};
-
-function chunkLines(lines, maxLength = 3500) {
-  const chunks = [];
-  let current = "";
-  for (const line of lines) {
-    if ((current + "\n" + line).length > maxLength) {
-      chunks.push(current);
-      current = line;
-    } else {
-      current = current ? `${current}\n${line}` : line;
-    }
+const CATEGORIES = [
+  {
+    id: "audit",
+    label: "Audit Commands",
+    emoji: "🔍",
+    color: 0x3498db,
+    commands: [
+      "grand_audit", "infrastructure_land", "build_slots_project",
+      "others", "my_audit", "audit_history"
+    ]
+  },
+  {
+    id: "alliance",
+    label: "Alliance-Wide",
+    emoji: "📊",
+    color: 0x9b59b6,
+    commands: [
+      "government_audit", "mentor_dashboard", "failing_nations",
+      "leaderboard", "tier_audit", "alliance_status",
+      "export_audit_report", "auto_grand_audit",
+      "member_list", "unlinked_members", "alliance_test"
+    ]
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    emoji: "📣",
+    color: 0xe67e22,
+    commands: [
+      "notify_failing_nations",
+      "set_auto_notify", "set_auto_notify_tier", "view_auto_notify_tiers", "run_auto_notify",
+      "set_scheduled_reports", "run_scheduled_reports"
+    ]
+  },
+  {
+    id: "tier_roles",
+    label: "Tier Roles",
+    emoji: "🎭",
+    color: 0x1abc9c,
+    commands: [
+      "set_tier_role", "view_tier_roles",
+      "set_tier_role_sync", "run_tier_role_sync"
+    ]
+  },
+  {
+    id: "unsc",
+    label: "UNSC Rotation",
+    emoji: "🪐",
+    color: 0x2c3e50,
+    commands: [
+      "set_unsc_config", "view_unsc_config",
+      "preview_unsc_rotation", "run_unsc_rotation"
+    ]
+  },
+  {
+    id: "config",
+    label: "Configuration",
+    emoji: "⚙️",
+    color: 0x95a5a6,
+    commands: [
+      "set_alliance", "set_mmr", "view_mmr",
+      "set_audit_score", "view_scores",
+      "set_grade_thresholds", "view_grade_thresholds",
+      "set_warchest_policy", "set_resource_policy",
+      "set_member_warchest", "view_member_warchest", "remove_member_warchest",
+      "set_audit_channel", "set_activity_limit", "set_raid_policy",
+      "set_role", "remove_role", "list_roles",
+      "reset_audit_settings", "prune_audit_history"
+    ]
+  },
+  {
+    id: "api_keys",
+    label: "API Key Tools",
+    emoji: "🔑",
+    color: 0xe74c3c,
+    commands: [
+      "link_api_key", "unlink_api_key", "api_key_status"
+    ]
+  },
+  {
+    id: "utility",
+    label: "Utility",
+    emoji: "🛠️",
+    color: 0x7f8c8d,
+    commands: [
+      "help", "api_test", "view_mmr", "view_scores",
+      "view_grade_thresholds", "view_tier_roles",
+      "view_auto_notify_tiers", "view_member_warchest", "view_unsc_config"
+    ]
   }
-  if (current) chunks.push(current);
-  return chunks.length > 0 ? chunks : ["None yet."];
+];
+
+// Button custom IDs for each category
+function buttonId(categoryId) {
+  return `help_cat_${categoryId}`;
 }
+
+// The intro embed shown on first /help
+function buildIntroEmbed() {
+  return new EmbedBuilder()
+    .setTitle("📖 TUN Audit Bot — Help")
+    .setColor(0x3498db)
+    .setDescription(
+      "Click a category button below to see its commands.\n\n" +
+        "💡 **Nation fields** accept an ID, name, profile link, or @mention.\n" +
+        "💡 **Alliance fields** accept an ID, name, or page link — case-insensitive.\n" +
+        "💡 **Permission tiers**: 🟢 Member · 🟡 Mentor · 🔵 Government · 🔴 Administrator"
+    );
+}
+
+// Builds the category embed for a chosen category
+function buildCategoryEmbed(category, commandMap) {
+  const TIER_EMOJI = { member: "🟢", mentor: "🟡", government: "🔵", administrator: "🔴" };
+
+  const lines = category.commands
+    .filter((name) => commandMap[name])
+    .map((name) => {
+      const cmd = commandMap[name];
+      return `${TIER_EMOJI[cmd.tier] ?? "⚪"} **/${name}** — ${cmd.desc}`;
+    });
+
+  return new EmbedBuilder()
+    .setTitle(`${category.emoji} ${category.label}`)
+    .setColor(category.color)
+    .setDescription(lines.join("\n") || "No commands in this category.");
+}
+
+// Discord allows max 5 buttons per ActionRow and max 5 rows per message (25 total).
+// We have 8 categories — fits in 2 rows of 4 and 4.
+function buildButtonRows(activeCategoryId) {
+  const rows = [];
+  const CHUNK_SIZE = 4;
+  for (let i = 0; i < CATEGORIES.length; i += CHUNK_SIZE) {
+    const chunk = CATEGORIES.slice(i, i + CHUNK_SIZE);
+    const row = new ActionRowBuilder().addComponents(
+      chunk.map((cat) =>
+        new ButtonBuilder()
+          .setCustomId(buttonId(cat.id))
+          .setLabel(cat.label)
+          .setEmoji(cat.emoji)
+          .setStyle(cat.id === activeCategoryId ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      )
+    );
+    rows.push(row);
+  }
+  return rows;
+}
+
+// Build the command lookup map from all loaded command files
+function buildCommandMap(commands) {
+  const map = {};
+  for (const command of commands.values()) {
+    map[command.data.name] = {
+      desc: command.data.description,
+      tier: command.minTier ?? "member"
+    };
+  }
+  return map;
+}
+
+// ── Module export ───────────────────────────────────────────────────────────
 
 module.exports = {
   minTier: "member",
-  data: new SlashCommandBuilder().setName("help").setDescription("Show every command the bot has and what it does."),
+  buttonPrefix: "help_cat_",
+
+  data: new SlashCommandBuilder()
+    .setName("help")
+    .setDescription("Show every command the bot has and what it does."),
 
   async execute(interaction) {
+    const { loadCommands } = require("../loadCommands");
     const commands = loadCommands();
+    const commandMap = buildCommandMap(commands);
 
-    const grouped = { member: [], mentor: [], government: [], administrator: [] };
-    for (const command of commands.values()) {
-      const tier = grouped[command.minTier] ? command.minTier : "member";
-      grouped[tier].push(`**/${command.data.name}** — ${command.data.description}`);
-    }
-    for (const tier of TIER_ORDER) grouped[tier].sort();
+    await interaction.reply({
+      embeds: [buildIntroEmbed()],
+      components: buildButtonRows(null),
+      flags: MessageFlags.Ephemeral
+    });
 
-    const introEmbed = new EmbedBuilder()
-      .setTitle("📖 TUN Audit Bot — Command Reference")
-      .setColor(0x9b59b6)
-      .setDescription(
-        "Here's everything I can do, grouped by who can use it.\n\n" +
-          "💡 Wherever a command asks for a `nation`, you can give a nation ID, a nation name, or a profile link.\n" +
-          "💡 Wherever a command asks for an `alliance`, you can give an alliance ID, name, or page link — spelling is case-insensitive."
-      );
+    // Store command map on the interaction for button handler use — but
+    // since each button interaction is a separate event, we re-build from
+    // the live command list each time (always up to date, no stale cache).
+  },
 
-    const embeds = [introEmbed];
+  // Called from index.js when a help category button is clicked
+  async handleButton(interaction) {
+    const categoryId = interaction.customId.replace("help_cat_", "");
+    const category = CATEGORIES.find((c) => c.id === categoryId);
+    if (!category) return;
 
-    for (const tier of TIER_ORDER) {
-      const chunks = chunkLines(grouped[tier]);
-      chunks.forEach((chunk, idx) => {
-        embeds.push(
-          new EmbedBuilder()
-            .setTitle(idx === 0 ? TIER_LABELS[tier] : `${TIER_LABELS[tier]} (cont.)`)
-            .setColor(TIER_COLORS[tier])
-            .setDescription(chunk)
-        );
-      });
-    }
+    const { loadCommands } = require("../loadCommands");
+    const commands = loadCommands();
+    const commandMap = buildCommandMap(commands);
 
-    // Discord allows max 10 embeds per message — send in batches if we
-    // ever genuinely exceed that (would mean 200+ commands at current pace).
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < embeds.length; i += BATCH_SIZE) {
-      const batch = embeds.slice(i, i + BATCH_SIZE);
-      if (i === 0) {
-        await interaction.reply({ embeds: batch });
-      } else {
-        await interaction.followUp({ embeds: batch });
-      }
-    }
+    await interaction.update({
+      embeds: [buildCategoryEmbed(category, commandMap)],
+      components: buildButtonRows(categoryId)
+    });
   }
 };

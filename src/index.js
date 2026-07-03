@@ -34,14 +34,21 @@ const client = new Client({
 
 const commands = loadCommands();
 
-// Some commands (like /link_api_key) open a private modal form instead of
-// answering directly. When the form is submitted, Discord sends a SEPARATE
-// interaction (not a chat command) — this maps each modal's custom ID back
-// to the command that knows how to handle its submission.
+// Some commands open a private modal form — map each modal's custom ID
+// back to the command that handles its submission.
 const modalHandlers = new Map();
 for (const command of commands.values()) {
   if (command.modalCustomId && command.handleModalSubmit) {
     modalHandlers.set(command.modalCustomId, command);
+  }
+}
+
+// Some commands use persistent button interactions (e.g. /help's category
+// buttons). Map each button prefix back to the command that handles clicks.
+const buttonHandlers = new Map();
+for (const command of commands.values()) {
+  if (command.buttonPrefix && command.handleButton) {
+    buttonHandlers.set(command.buttonPrefix, command);
   }
 }
 
@@ -76,6 +83,22 @@ client.on("interactionCreate", async (interaction) => {
       } catch (error) {
         console.error(`Error handling modal submit for ${interaction.customId}:`, error);
         await safeErrorReply(interaction, "⚠️ Something went wrong processing that. Please try again.");
+      }
+      return;
+    }
+
+    if (interaction.isButton()) {
+      // Find a handler whose prefix matches this button's custom ID
+      for (const [prefix, handler] of buttonHandlers.entries()) {
+        if (interaction.customId.startsWith(prefix)) {
+          try {
+            await handler.handleButton(interaction);
+          } catch (error) {
+            console.error(`Error handling button ${interaction.customId}:`, error);
+            await safeErrorReply(interaction, "⚠️ Something went wrong. Please try again.");
+          }
+          return;
+        }
       }
       return;
     }
