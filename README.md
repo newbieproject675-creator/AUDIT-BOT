@@ -20,6 +20,7 @@ The actual nation-auditing commands come in Stage 2.
    ```
    npm install
    ```
+   
 4. Make a copy of `.env.example` and rename the copy to `.env`.
 5. Open `.env` in any text editor and fill in:
    - `DISCORD_TOKEN` — your bot's token from the Discord Developer Portal.
