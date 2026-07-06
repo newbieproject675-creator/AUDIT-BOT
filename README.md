@@ -85,4 +85,4 @@ data/                  <- where each server's settings get saved (auto-created)
 - `/set_role` (Administrator) — promote a Discord role to Mentor/Government/Administrator
 - `/view_scores` (Member)
 - `/view_mmr` (Member)
-- `/audit_history` (Member) — will be empty until Stage 2 adds real audits
+- `/audit_history` (Member) — will be empty until Stage 2 adds real audits.
