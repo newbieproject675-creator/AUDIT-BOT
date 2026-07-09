@@ -29,7 +29,14 @@ function defaultSettings() {
       "C16-C20": { barracks: 0, factory: 0, hangar: 0, drydock: 0 },
       "C21+": { barracks: 0, factory: 0, hangar: 0, drydock: 0 }
     },
-    scores: {
+// Configurable infrastructure caps per city-count tier for Check 1.
+// Default values match the original hardcoded spec values.
+infraCapTiers: {
+  c1_c14: 1300,
+  c15_c19: 1500,
+  c20_plus: 2000
+},  
+scores: {
       check1_infra_cap: 6,
       check2_equal_infra: 6,
       check3_land_ratio: 6,
@@ -230,6 +237,10 @@ function getSettings(guildId) {
     settings.lastNotified = {};
     migrated = true;
   }
+if (!settings.infraCapTiers) {
+  settings.infraCapTiers = { c1_c14: 1300, c15_c19: 1500, c20_plus: 2000 };
+  migrated = true;
+}
   if (migrated) saveSettings(guildId, settings);
 
   return settings;
