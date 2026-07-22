@@ -110,6 +110,15 @@ scores: {
       termStartedAt: null,
       lastRunAt: null
     },
+
+        // Inactivity demotion feature — manual trigger only, never automatic.
+    inactivityDemotion: {
+      thresholdDays: 7,
+      defaulterRoleId: null,
+      // Optional: list of role IDs to always keep (e.g. Permanent UNSC)
+      // Everything else except @everyone is removed.
+      protectedRoleIds: []
+    },
     // Members' personal PnW API keys, encrypted at rest (see crypto.js).
     // Collected via /link_api_key using a private Discord modal — never
     // typed as a visible command option. Keyed by nation ID (as a string).
@@ -241,6 +250,16 @@ if (!settings.infraCapTiers) {
   settings.infraCapTiers = { c1_c14: 1300, c15_c19: 1500, c20_plus: 2000 };
   migrated = true;
 }
+
+if (!settings.inactivityDemotion) {
+  settings.inactivityDemotion = {
+    thresholdDays: 7,
+    defaulterRoleId: null,
+    protectedRoleIds: []
+  };
+  migrated = true;
+}
+
   if (migrated) saveSettings(guildId, settings);
 
   return settings;
