@@ -46,6 +46,22 @@ const CATEGORIES = [
       "set_scheduled_reports", "run_scheduled_reports"
     ]
   },
+
+{
+  id: "defaulters",
+  label: "Defaulter System",
+  emoji: "🚫",
+  color: 0xc0392b,
+  commands: [
+    "set_demotion_config",
+    "remove_protected_role",
+    "defaulter_status",
+    "demote_inactive",
+    "restore_member",
+    "view_defaulters"
+  ]
+},
+
   {
     id: "tier_roles",
     label: "Tier Roles",

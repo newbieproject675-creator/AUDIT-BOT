@@ -5,11 +5,29 @@ const { getSettings, saveSettings } = require("../db");
 // Audit history and encrypted API keys are deliberately excluded —
 // history stays on the server, and keys should never be in a backup file.
 const RESTORABLE_FIELDS = [
-  "alliance", "mmr", "scores", "gradeThresholds", "passingScore",
-  "warchestPolicy", "resourcePolicy", "memberWarchestOverrides",
-  "infraCapTiers", "activityLimitHours", "raidPolicy",
-  "roleMap", "tierRoles", "tierRoleSync", "autoNotify",
-  "scheduledReports", "unscRotation", "auditChannelId", "lastNotified"
+  "alliance",
+  "mmr",
+  "scores",
+  "gradeThresholds",
+  "passingScore",
+  "warchestPolicy",
+  "resourcePolicy",
+  "memberWarchestOverrides",
+  "infraCapTiers",
+  "activityLimitHours",
+  "raidPolicy",
+  "roleMap",
+  "tierRoles",
+  "tierRoleSync",
+  "autoNotify",
+  "scheduledReports",
+  "unscRotation",
+  "auditChannelId",
+  "lastNotified",
+
+  // Inactivity Management
+  "inactivityDemotion",
+  "demotionLog"
 ];
 
 module.exports = {

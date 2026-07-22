@@ -34,7 +34,11 @@ module.exports = {
       scheduledReports: { ...settings.scheduledReports, lastRunAt: null },
       unscRotation: { ...settings.unscRotation, lastRunAt: null, currentTermNationIds: settings.unscRotation?.currentTermNationIds ?? [] },
       auditChannelId: settings.auditChannelId,
-      lastNotified: settings.lastNotified
+lastNotified: settings.lastNotified,
+
+// Inactivity Management
+inactivityDemotion: settings.inactivityDemotion,
+demotionLog: settings.demotionLog
     };
 
     const json = JSON.stringify(exportData, null, 2);
