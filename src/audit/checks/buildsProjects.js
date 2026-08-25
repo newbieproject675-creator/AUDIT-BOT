@@ -1,11 +1,13 @@
 // buildsProjects.js
 //
-// Checks 4 through 10 from the spec (Section 7, Builds & Projects).
-// Check 11 ("Project Opportunity") is intentionally NOT here yet — it needs
-// the full project list and the project-slot formula confirmed first, so we
-// don't report a wrong number to your members.
+// Checks 4 through 11 from the spec (Section 7, Builds & Projects).
+// Check 4 (MMR) now uses a flexible slot-based system:
+//   - 5 hangars mandatory per city
+//   - Total military slots must meet the configured minimum for the tier
+//   - Remaining slots freely distributed across barracks/factory/drydock
 
-// Every building "slot" a city can hold. Used by Check 5.
+const { check4 } = require("./mmrCheck");
+
 const BUILDING_FIELDS = [
   "coal_power", "oil_power", "nuclear_power", "wind_power",
   "coal_mine", "oil_well", "iron_mine", "bauxite_mine", "lead_mine", "uranium_mine", "farm",
@@ -19,43 +21,10 @@ function totalBuilt(city) {
   return BUILDING_FIELDS.reduce((sum, field) => sum + (city[field] || 0), 0);
 }
 
-// Figures out which MMR tier a nation falls into, based on its total city count.
-function mmrTierFor(numCities) {
-  if (numCities <= 5) return "C1-C5";
-  if (numCities <= 10) return "C6-C10";
-  if (numCities <= 15) return "C11-C15";
-  if (numCities <= 20) return "C16-C20";
-  return "C21+";
-}
-
 const checks = [
-  {
-    key: "check4_mmr",
-    label: "MMR Requirement",
-    recommendation: "Build up to the alliance's required MMR (for this nation's city-count tier) in the listed cities.",
-    run(nation, settings) {
-      const tier = mmrTierFor(nation.num_cities);
-      const required = settings.mmr[tier];
-      const violations = [];
-      nation.cities.forEach((city, idx) => {
-        const shortfalls = [];
-        if (city.barracks < required.barracks) shortfalls.push(`barracks ${city.barracks}/${required.barracks}`);
-        if (city.factory < required.factory) shortfalls.push(`factory ${city.factory}/${required.factory}`);
-        if (city.hangar < required.hangar) shortfalls.push(`hangar ${city.hangar}/${required.hangar}`);
-        if (city.drydock < required.drydock) shortfalls.push(`drydock ${city.drydock}/${required.drydock}`);
-        if (shortfalls.length > 0) {
-          violations.push(`${city.name} (C${idx + 1}): ${shortfalls.join(", ")}`);
-        }
-      });
-      return {
-        passed: violations.length === 0,
-        detail:
-          violations.length === 0
-            ? `All cities meet the MMR requirement for tier ${tier}.`
-            : `Tier ${tier}: ` + violations.join("; ")
-      };
-    }
-  },
+  // Check 4: new slot-based MMR with mandatory 5 hangars
+  check4,
+
   {
     key: "check5_free_slots",
     label: "No Free Building Slots",
@@ -75,6 +44,7 @@ const checks = [
       };
     }
   },
+
   {
     key: "check6_farm_restriction",
     label: "Farm Restriction",
@@ -94,6 +64,7 @@ const checks = [
       };
     }
   },
+
   {
     key: "check7_activity_center",
     label: "Activity Center",
@@ -108,6 +79,7 @@ const checks = [
       };
     }
   },
+
   {
     key: "check8_civil_arable",
     label: "Civil Engineering & Arable Land",
@@ -125,6 +97,7 @@ const checks = [
       };
     }
   },
+
   {
     key: "check9_nuclear_power",
     label: "Nuclear Power Requirement",
@@ -137,6 +110,7 @@ const checks = [
       };
     }
   },
+
   {
     key: "check10_excess_nuclear",
     label: "No Excess Nuclear Plants",
@@ -151,17 +125,12 @@ const checks = [
       };
     }
   },
+
   {
     key: "check11_project_opportunity",
     label: "Project Opportunity",
     recommendation: "Build a National Project — your nation has at least one unused, guaranteed project slot.",
     run(nation) {
-      // Official formula: 1 base slot + 1 per 5,000 total infrastructure
-      // + 1 if 100+ wars won/lost combined + 1 if Research & Development Center is built.
-      // This is a GUARANTEED MINIMUM — nations can buy extra slots with Credits,
-      // which isn't visible to us, so actual capacity may be higher than this.
-      // That means this check can only ever under-report available slots,
-      // never wrongly flag a compliant nation.
       const totalInfra = nation.cities.reduce((sum, c) => sum + c.infrastructure, 0);
       const combinedWars = (nation.wars_won || 0) + (nation.wars_lost || 0);
 

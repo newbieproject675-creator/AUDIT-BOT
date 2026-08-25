@@ -22,13 +22,13 @@ function defaultSettings() {
     alliance: { id: null, name: null, colour: null },
     // MMR now varies by city-count tier, since a 3-city nation and a
     // 25-city nation shouldn't need the same number of military buildings.
-    mmr: {
-      "C1-C5": { barracks: 0, factory: 0, hangar: 0, drydock: 0 },
-      "C6-C10": { barracks: 0, factory: 0, hangar: 0, drydock: 0 },
-      "C11-C15": { barracks: 0, factory: 0, hangar: 0, drydock: 0 },
-      "C16-C20": { barracks: 0, factory: 0, hangar: 0, drydock: 0 },
-      "C21+": { barracks: 0, factory: 0, hangar: 0, drydock: 0 }
-    },
+mmr: {
+  "C1-C5":   { minSlots: 5 },
+  "C6-C10":  { minSlots: 5 },
+  "C11-C15": { minSlots: 5 },
+  "C16-C20": { minSlots: 5 },
+  "C21+":    { minSlots: 5 }
+},
 // Configurable infrastructure caps per city-count tier for Check 1.
 // Default values match the original hardcoded spec values.
 infraCapTiers: {
@@ -259,7 +259,15 @@ if (!settings.inactivityDemotion) {
   };
   migrated = true;
 }
-
+// Migration: convert old barracks/factory/hangar/drydock MMR to new slot-based system
+if (settings.mmr && settings.mmr["C1-C5"] && settings.mmr["C1-C5"].barracks !== undefined) {
+  for (const tier of Object.keys(settings.mmr)) {
+    const old = settings.mmr[tier];
+    const oldTotal = (old.barracks || 0) + (old.factory || 0) + (old.hangar || 0) + (old.drydock || 0);
+    settings.mmr[tier] = { minSlots: Math.max(oldTotal, 5) };
+  }
+  migrated = true;
+}
   if (migrated) saveSettings(guildId, settings);
 
   return settings;

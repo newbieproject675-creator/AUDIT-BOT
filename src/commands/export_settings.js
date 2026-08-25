@@ -20,7 +20,6 @@ module.exports = {
       mmr: settings.mmr,
       scores: settings.scores,
       gradeThresholds: settings.gradeThresholds,
-      passingScore: settings.passingScore,
       warchestPolicy: settings.warchestPolicy,
       resourcePolicy: settings.resourcePolicy,
       memberWarchestOverrides: settings.memberWarchestOverrides,

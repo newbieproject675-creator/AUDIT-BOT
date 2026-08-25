@@ -9,7 +9,6 @@ const RESTORABLE_FIELDS = [
   "mmr",
   "scores",
   "gradeThresholds",
-  "passingScore",
   "warchestPolicy",
   "resourcePolicy",
   "memberWarchestOverrides",
