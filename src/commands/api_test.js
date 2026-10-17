@@ -1,35 +1,28 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { getNationTestSeniority } = require("../pnw");
+const { SlashCommandBuilder } = require("discord.js");
+const { getNationTestTimer } = require("../pnw");
+const { hasPermission } = require("../permissions");
 
 module.exports = {
   minTier: "administrator",
   data: new SlashCommandBuilder()
     .setName("api_test")
-    .setDescription("[Setup] Test the connection to the Politics & War API and see the raw data.")
+    .setDescription("[Debug] Dump raw nation data from the PnW API.")
     .addIntegerOption((opt) =>
-      opt.setName("nation_id").setDescription("A nation ID to test with").setRequired(true)
+      opt.setName("nation_id").setDescription("The Politics & War nation ID to test").setRequired(true)
     ),
 
   async execute(interaction) {
     await interaction.deferReply();
 
     try {
-      const nation = await getNationTestSeniority(interaction.options.getInteger("nation_id"));
-
-      // Pretty-print the data we got back, capped so Discord doesn't reject the message.
-      const json = JSON.stringify(nation, null, 2);
-      const trimmed = json.length > 1800 ? json.slice(0, 1800) + "\n... (cut off)" : json;
-
-      const embed = new EmbedBuilder()
-        .setTitle(`API Test — ${nation.nation_name}`)
-        .setColor(0x2ecc71)
-        .setDescription("✅ Connected successfully! Here's the raw data we received:\n```json\n" + trimmed + "\n```");
-
-      await interaction.editReply({ embeds: [embed] });
+      const nation = await getNationTestTimer(interaction.options.getInteger("nation_id"));
+      await interaction.editReply(
+        `✅ API test succeeded:\n\`\`\`json\n${JSON.stringify(nation, null, 2)}\n\`\`\``
+      );
     } catch (error) {
-      await interaction.editReply({
-        content: `❌ API test failed:\n\`\`\`${error.message}\`\`\`\nCopy this whole message and send it back so it can be fixed.`
-      });
+      await interaction.editReply(
+        `❌ API test failed:\n\`\`\`${error.message}\`\`\`\nCopy this whole message and send it back so it can be fixed.`
+      );
     }
   }
 };
