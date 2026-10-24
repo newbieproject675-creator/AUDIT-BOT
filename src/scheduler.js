@@ -1,16 +1,17 @@
 // scheduler.js
 //
 // A single timer that wakes up periodically (every 15 minutes) and checks
-// every guild the bot is in, for THREE independent jobs:
+// every guild the bot is in, for FOUR independent jobs:
 //   1. autoNotify        — DMs nations that currently have a problem.
-//   2. scheduledReports   — DMs every member their own Grand Audit report
-//                           on a fixed schedule.
-//   3. tierRoleSync       — keeps each member's Discord tier role in sync
-//                           with their current city count.
+//   2. scheduledReports  — DMs every member their own Grand Audit report.
+//   3. tierRoleSync      — keeps each member's Discord tier role in sync.
+//   4. unscRotation      — rotates the non-permanent council seats.
 //
-// Each guild can turn any of these on/off and set its own interval — this
-// one timer just checks "is anyone due?" every 15 minutes and runs
-// whichever jobs are due for whichever guilds.
+// IMPORTANT: A startup grace period prevents any job from firing immediately
+// when the bot restarts. Without this, jobs would re-run on every restart
+// because Node.js re-evaluates "is this due?" from scratch each time.
+// The grace period gives the bot 5 minutes to fully start up before any
+// scheduled job is allowed to run.
 
 const { getSettings, saveSettings } = require("./db");
 const { runAutoNotifyForGuild } = require("./audit/autoNotify");
@@ -19,11 +20,19 @@ const { runTierRoleSyncForGuild } = require("./audit/tierRoleSync");
 const { runUnscRotation } = require("./audit/unscRotation");
 
 const TICK_INTERVAL_MS = 15 * 60 * 1000; // check every 15 minutes
-const currentlyRunning = new Set(); // in-memory lock, keyed as "guildId:jobName"
+const STARTUP_GRACE_MS = 5 * 60 * 1000;  // don't run anything for 5 minutes after startup
+const currentlyRunning = new Set();
+
+// The moment this module was first loaded — used for the grace period check.
+const BOT_START_TIME = Date.now();
 
 function isDue(lastRunAtIso, intervalMs) {
   const lastRunAt = lastRunAtIso ? new Date(lastRunAtIso) : null;
   return !lastRunAt || Date.now() - lastRunAt.getTime() >= intervalMs;
+}
+
+function isGracePeriodOver() {
+  return Date.now() - BOT_START_TIME >= STARTUP_GRACE_MS;
 }
 
 async function runAutoNotifyJob(client, guild, settings) {
@@ -119,6 +128,12 @@ async function runUnscRotationJob(client, guild, settings) {
 }
 
 async function tick(client) {
+  // Don't run ANY scheduled job during the startup grace period.
+  // This prevents jobs from firing on every bot restart.
+  if (!isGracePeriodOver()) {
+    return;
+  }
+
   for (const guild of client.guilds.cache.values()) {
     const settings = getSettings(guild.id);
     await runAutoNotifyJob(client, guild, settings);
@@ -132,7 +147,9 @@ function startScheduler(client) {
   setInterval(() => {
     tick(client).catch((error) => console.error("[scheduler] Unexpected scheduler error:", error));
   }, TICK_INTERVAL_MS);
-  console.log("✅ Scheduler started (checks every 15 minutes for guilds with any scheduled job enabled).");
+  console.log(
+    `✅ Scheduler started (5-minute startup grace period, then checks every 15 minutes for guilds with any scheduled job enabled).`
+  );
 }
 
 module.exports = { startScheduler };
