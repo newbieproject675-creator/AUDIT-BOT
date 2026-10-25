@@ -9,6 +9,7 @@ const { loadCommands } = require("./loadCommands");
 const { getSettings } = require("./db");
 const { getMemberTier, meetsTier } = require("./permissions");
 const { startScheduler } = require("./scheduler");
+const { autoRegisterCommands } = require("./autoRegister");
 
 const { DISCORD_TOKEN } = process.env;
 
@@ -52,9 +53,12 @@ for (const command of commands.values()) {
   }
 }
 
-client.once("ready", () => {
+client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`   Loaded ${commands.size} commands: ${[...commands.keys()].join(", ")}`);
+  // Auto-register slash commands with Discord if anything has changed.
+  // No-ops if commands are already up to date — no unnecessary API calls.
+  await autoRegisterCommands(commands);
   startScheduler(client);
 });
 
@@ -92,7 +96,7 @@ client.on("interactionCreate", async (interaction) => {
       for (const [prefix, handler] of buttonHandlers.entries()) {
         if (interaction.customId.startsWith(prefix)) {
           try {
-            await handler.handleButton(interaction);
+            await handler.handleButton(interaction, commands);
           } catch (error) {
             console.error(`Error handling button ${interaction.customId}:`, error);
             await safeErrorReply(interaction, "⚠️ Something went wrong. Please try again.");
@@ -123,7 +127,7 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     try {
-      await command.execute(interaction, settings);
+      await command.execute(interaction, settings, commands);
     } catch (error) {
       console.error(`Error running /${command.data.name}:`, error);
       await safeErrorReply(interaction, "⚠️ Something went wrong running that command. Please try again.");

@@ -1,29 +1,17 @@
-// scheduler.js
-//
-// A single timer that wakes up periodically (every 15 minutes) and checks
-// every guild the bot is in, for FOUR independent jobs:
-//   1. autoNotify        — DMs nations that currently have a problem.
-//   2. scheduledReports  — DMs every member their own Grand Audit report.
-//   3. tierRoleSync      — keeps each member's Discord tier role in sync.
-//   4. unscRotation      — rotates the non-permanent council seats.
-//
-// IMPORTANT: A startup grace period prevents any job from firing immediately
-// when the bot restarts. Without this, jobs would re-run on every restart
-// because Node.js re-evaluates "is this due?" from scratch each time.
-// The grace period gives the bot 5 minutes to fully start up before any
-// scheduled job is allowed to run.
+// scheduler.js — 5 scheduled jobs, all share one 15-minute tick.
+// Startup grace period prevents any job from firing on bot restart.
 
 const { getSettings, saveSettings } = require("./db");
 const { runAutoNotifyForGuild } = require("./audit/autoNotify");
 const { runScheduledReportsForGuild } = require("./audit/scheduledReports");
 const { runTierRoleSyncForGuild } = require("./audit/tierRoleSync");
 const { runUnscRotation } = require("./audit/unscRotation");
+const { runDailyAuditForGuild } = require("./audit/dailyAudit");
+const { runIaAlertsForGuild } = require("./audit/iaAlerts");
 
-const TICK_INTERVAL_MS = 15 * 60 * 1000; // check every 15 minutes
-const STARTUP_GRACE_MS = 5 * 60 * 1000;  // don't run anything for 5 minutes after startup
+const TICK_INTERVAL_MS = 15 * 60 * 1000;
+const STARTUP_GRACE_MS = 5 * 60 * 1000;
 const currentlyRunning = new Set();
-
-// The moment this module was first loaded — used for the grace period check.
 const BOT_START_TIME = Date.now();
 
 function isDue(lastRunAtIso, intervalMs) {
@@ -35,121 +23,95 @@ function isGracePeriodOver() {
   return Date.now() - BOT_START_TIME >= STARTUP_GRACE_MS;
 }
 
-async function runAutoNotifyJob(client, guild, settings) {
-  const lockKey = `${guild.id}:autoNotify`;
+async function runJob(lockKey, label, fn) {
   if (currentlyRunning.has(lockKey)) return;
-  if (!settings.autoNotify?.enabled || !settings.alliance.id) return;
-  if (!isDue(settings.autoNotify.lastRunAt, settings.autoNotify.intervalHours * 60 * 60 * 1000)) return;
-
   currentlyRunning.add(lockKey);
   try {
-    console.log(`[autoNotify] Starting scheduled run for guild ${guild.id} (${guild.name})...`);
-    const stats = await runAutoNotifyForGuild(client, guild, settings);
-    settings.autoNotify.lastRunAt = new Date().toISOString();
-    saveSettings(guild.id, settings);
-    console.log(
-      `[autoNotify] Finished guild ${guild.id}: checked ${stats.checked}, sent ${stats.dmsSent}, ` +
-        `failed ${stats.dmsFailed}, no Discord linked ${stats.skippedNoDiscord}, on cooldown ${stats.skippedCooldown}`
-    );
+    console.log(`[${label}] Starting scheduled run...`);
+    const result = await fn();
+    console.log(`[${label}] Done:`, JSON.stringify(result));
   } catch (error) {
-    console.error(`[autoNotify] Error running scheduled notify for guild ${guild.id}:`, error);
-  } finally {
-    currentlyRunning.delete(lockKey);
-  }
-}
-
-async function runScheduledReportsJob(client, guild, settings) {
-  const lockKey = `${guild.id}:scheduledReports`;
-  if (currentlyRunning.has(lockKey)) return;
-  if (!settings.scheduledReports?.enabled || !settings.alliance.id) return;
-  if (!isDue(settings.scheduledReports.lastRunAt, settings.scheduledReports.intervalDays * 24 * 60 * 60 * 1000)) return;
-
-  currentlyRunning.add(lockKey);
-  try {
-    console.log(`[scheduledReports] Starting scheduled run for guild ${guild.id} (${guild.name})...`);
-    const stats = await runScheduledReportsForGuild(client, guild, settings);
-    settings.scheduledReports.lastRunAt = new Date().toISOString();
-    saveSettings(guild.id, settings);
-    console.log(
-      `[scheduledReports] Finished guild ${guild.id}: checked ${stats.checked}, sent ${stats.dmsSent}, ` +
-        `failed ${stats.dmsFailed}, no Discord linked ${stats.skippedNoDiscord}`
-    );
-  } catch (error) {
-    console.error(`[scheduledReports] Error running scheduled reports for guild ${guild.id}:`, error);
-  } finally {
-    currentlyRunning.delete(lockKey);
-  }
-}
-
-async function runTierRoleSyncJob(client, guild, settings) {
-  const lockKey = `${guild.id}:tierRoleSync`;
-  if (currentlyRunning.has(lockKey)) return;
-  if (!settings.tierRoleSync?.enabled || !settings.alliance.id) return;
-  if (!isDue(settings.tierRoleSync.lastRunAt, settings.tierRoleSync.intervalHours * 60 * 60 * 1000)) return;
-
-  currentlyRunning.add(lockKey);
-  try {
-    console.log(`[tierRoleSync] Starting scheduled run for guild ${guild.id} (${guild.name})...`);
-    const stats = await runTierRoleSyncForGuild(client, guild, settings);
-    settings.tierRoleSync.lastRunAt = new Date().toISOString();
-    saveSettings(guild.id, settings);
-    console.log(
-      `[tierRoleSync] Finished guild ${guild.id}: checked ${stats.checked}, updated ${stats.updated}, ` +
-        `already correct ${stats.alreadyCorrect}, role errors ${stats.roleErrors}`
-    );
-  } catch (error) {
-    console.error(`[tierRoleSync] Error running tier role sync for guild ${guild.id}:`, error);
-  } finally {
-    currentlyRunning.delete(lockKey);
-  }
-}
-
-async function runUnscRotationJob(client, guild, settings) {
-  const lockKey = `${guild.id}:unscRotation`;
-  if (currentlyRunning.has(lockKey)) return;
-  if (!settings.unscRotation?.enabled || !settings.alliance.id) return;
-  if (!isDue(settings.unscRotation.lastRunAt, settings.unscRotation.intervalDays * 24 * 60 * 60 * 1000)) return;
-
-  currentlyRunning.add(lockKey);
-  try {
-    console.log(`[unscRotation] Starting scheduled rotation for guild ${guild.id} (${guild.name})...`);
-    const summary = await runUnscRotation(client, guild, settings);
-    settings.unscRotation.lastRunAt = new Date().toISOString();
-    saveSettings(guild.id, settings);
-    console.log(
-      `[unscRotation] Finished guild ${guild.id}: removed ${summary.outgoingRemoved}, seated ${summary.newlySeated.length}, ` +
-        `eligible ${summary.eligibleCount}, excluded ${summary.excludedCount}, errors ${summary.outgoingErrors}`
-    );
-  } catch (error) {
-    console.error(`[unscRotation] Error running rotation for guild ${guild.id}:`, error);
+    console.error(`[${label}] Error:`, error.message);
   } finally {
     currentlyRunning.delete(lockKey);
   }
 }
 
 async function tick(client) {
-  // Don't run ANY scheduled job during the startup grace period.
-  // This prevents jobs from firing on every bot restart.
-  if (!isGracePeriodOver()) {
-    return;
-  }
+  if (!isGracePeriodOver()) return;
 
   for (const guild of client.guilds.cache.values()) {
     const settings = getSettings(guild.id);
-    await runAutoNotifyJob(client, guild, settings);
-    await runScheduledReportsJob(client, guild, settings);
-    await runTierRoleSyncJob(client, guild, settings);
-    await runUnscRotationJob(client, guild, settings);
+
+    if (settings.autoNotify?.enabled && settings.alliance.id &&
+        isDue(settings.autoNotify.lastRunAt, settings.autoNotify.intervalHours * 3600000)) {
+      await runJob(`${guild.id}:autoNotify`, "autoNotify", async () => {
+        const stats = await runAutoNotifyForGuild(client, guild, settings);
+        settings.autoNotify.lastRunAt = new Date().toISOString();
+        saveSettings(guild.id, settings);
+        return stats;
+      });
+    }
+
+    if (settings.scheduledReports?.enabled && settings.alliance.id &&
+        isDue(settings.scheduledReports.lastRunAt, settings.scheduledReports.intervalDays * 86400000)) {
+      await runJob(`${guild.id}:scheduledReports`, "scheduledReports", async () => {
+        const stats = await runScheduledReportsForGuild(client, guild, settings);
+        settings.scheduledReports.lastRunAt = new Date().toISOString();
+        saveSettings(guild.id, settings);
+        return stats;
+      });
+    }
+
+    if (settings.tierRoleSync?.enabled && settings.alliance.id &&
+        isDue(settings.tierRoleSync.lastRunAt, settings.tierRoleSync.intervalHours * 3600000)) {
+      await runJob(`${guild.id}:tierRoleSync`, "tierRoleSync", async () => {
+        const stats = await runTierRoleSyncForGuild(client, guild, settings);
+        settings.tierRoleSync.lastRunAt = new Date().toISOString();
+        saveSettings(guild.id, settings);
+        return stats;
+      });
+    }
+
+    if (settings.unscRotation?.enabled && settings.alliance.id &&
+        isDue(settings.unscRotation.lastRunAt, settings.unscRotation.intervalDays * 86400000)) {
+      await runJob(`${guild.id}:unscRotation`, "unscRotation", async () => {
+        const summary = await runUnscRotation(client, guild, settings);
+        settings.unscRotation.lastRunAt = new Date().toISOString();
+        saveSettings(guild.id, settings);
+        return summary;
+      });
+    }
+
+    // Daily audit — runs once every 24 hours silently
+    if (settings.dailyAudit?.enabled && settings.alliance.id &&
+        isDue(settings.dailyAudit.lastRunAt, 24 * 3600000)) {
+      await runJob(`${guild.id}:dailyAudit`, "dailyAudit", async () => {
+        const stats = await runDailyAuditForGuild(settings, guild.id);
+        settings.dailyAudit.lastRunAt = new Date().toISOString();
+        saveSettings(guild.id, settings);
+        return stats;
+      });
+    }
+
+    // IA alerts — runs once per day, after daily audit has a chance to run
+    if (settings.iaAlerts?.enabled && settings.alliance.id &&
+        isDue(settings.iaAlerts.lastRunAt, 24 * 3600000)) {
+      await runJob(`${guild.id}:iaAlerts`, "iaAlerts", async () => {
+        const stats = await runIaAlertsForGuild(client, guild, settings, guild.id);
+        settings.iaAlerts.lastRunAt = new Date().toISOString();
+        saveSettings(guild.id, settings);
+        return stats;
+      });
+    }
   }
 }
 
 function startScheduler(client) {
   setInterval(() => {
-    tick(client).catch((error) => console.error("[scheduler] Unexpected scheduler error:", error));
+    tick(client).catch((error) => console.error("[scheduler] Unexpected error:", error));
   }, TICK_INTERVAL_MS);
-  console.log(
-    `✅ Scheduler started (5-minute startup grace period, then checks every 15 minutes for guilds with any scheduled job enabled).`
-  );
+  console.log("✅ Scheduler started (5-minute startup grace, then checks every 15 minutes).");
 }
 
 module.exports = { startScheduler };
