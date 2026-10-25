@@ -1,6 +1,20 @@
 const { SlashCommandBuilder, EmbedBuilder, ChannelType } = require("discord.js");
 const { getSettings, saveSettings } = require("../db");
 
+const IA_DEFAULTS = {
+  enabled: false,
+  windowDays: 28,
+  minAudits: 7,
+  failureRateThreshold: 75,
+  iaRoleId: null,
+  iaChannelId: null,
+  cooldownDays: 7,
+  lastRunAt: null,
+  lastAlertedNations: {}
+};
+
+const DA_DEFAULTS = { enabled: false, lastRunAt: null };
+
 module.exports = {
   minTier: "administrator",
   data: new SlashCommandBuilder()
@@ -17,6 +31,13 @@ module.exports = {
 
   async execute(interaction) {
     const settings = getSettings(interaction.guildId);
+
+    // Initialise blocks if missing (handles guilds that existed before
+    // these settings were added and haven't run db.js migration yet)
+    if (!settings.iaAlerts) settings.iaAlerts = { ...IA_DEFAULTS };
+    if (!settings.iaAlerts.lastAlertedNations) settings.iaAlerts.lastAlertedNations = {};
+    if (!settings.dailyAudit) settings.dailyAudit = { ...DA_DEFAULTS };
+
     const ia = settings.iaAlerts;
     const da = settings.dailyAudit;
 

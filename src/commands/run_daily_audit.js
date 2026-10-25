@@ -12,6 +12,9 @@ module.exports = {
     await interaction.deferReply();
 
     const settings = getSettings(interaction.guildId);
+
+    if (!settings.dailyAudit) settings.dailyAudit = { enabled: false, lastRunAt: null };
+
     if (!settings.alliance.id) {
       await interaction.editReply("❌ No alliance registered yet — run /set_alliance first.");
       return;

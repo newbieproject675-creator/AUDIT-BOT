@@ -13,6 +13,12 @@ module.exports = {
 
     const settings = getSettings(interaction.guildId);
 
+    if (!settings.iaAlerts) settings.iaAlerts = {
+      enabled: false, windowDays: 28, minAudits: 7,
+      failureRateThreshold: 75, iaRoleId: null, iaChannelId: null,
+      cooldownDays: 7, lastRunAt: null, lastAlertedNations: {}
+    };
+
     if (!settings.iaAlerts.iaChannelId || !settings.iaAlerts.iaRoleId) {
       await interaction.editReply("❌ IA channel or role not configured — run /set_ia_config first.");
       return;
@@ -21,7 +27,7 @@ module.exports = {
     if ((settings.auditHistory || []).length === 0) {
       await interaction.editReply(
         "❌ No audit history on file yet. Enable the silent daily audit with `/set_ia_config daily_audit_enabled:True` " +
-          "and wait at least a few days for data to accumulate before running this."
+          "and wait at least a few days for data to accumulate, or run `/run_daily_audit` manually now to start."
       );
       return;
     }
