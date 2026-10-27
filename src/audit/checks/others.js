@@ -1,23 +1,13 @@
-// others.js
+// others.js — Checks 12, 13, 14, 16, 17, 18, 19, 20.
 //
-// Checks 12, 13, 14, 16, 17, 18 from the spec (Section 7, Others).
-// Check 15 isn't here on purpose — it's missing from the original spec too.
-//
-// Two simplifications worth knowing about:
-// 1. Check 14 (Resource Control) compares current stockpiles directly
-//    against your /set_warchest_policy targets. The spec's "Upkeep Buffer"
-//    isn't folded in automatically yet — that requires modeling a nation's
-//    full daily resource consumption (food, gas, munitions, steel, etc. for
-//    every unit and building), which we haven't built. Easy to add later.
-// 2. Check 17 (Power & Upkeep) only checks cash upkeep for soldiers, tanks,
-//    aircraft, and ships (using Politics & War's official daily upkeep
-//    rates), not food/gas/munitions upkeep. Can be expanded the same way.
+// Checks 18 (Military Fill) and 20 (Spy Count) now use partial-credit
+// scoring via the partialScore field (0.0–1.0). All other checks remain
+// binary pass/fail unchanged.
 
 const RESOURCE_FIELDS = [
   "money", "food", "coal", "oil", "uranium", "lead", "iron", "bauxite", "gasoline", "munitions", "steel", "aluminum"
 ];
 
-// Official peacetime daily upkeep costs (politicsandwar.fandom.com/wiki/War)
 const DAILY_UPKEEP = {
   soldiers: 1.25,
   tanks: 50,
@@ -25,7 +15,6 @@ const DAILY_UPKEEP = {
   ships: 3375
 };
 
-// Official military capacity per building (politicsandwar.fandom.com/wiki/Military_Improvements)
 const CAPACITY_PER_BUILDING = {
   barracks: 3000,
   factory: 250,
@@ -34,14 +23,9 @@ const CAPACITY_PER_BUILDING = {
 };
 
 function activeWarCount(wars) {
-  // turnsleft > 0 means the war is still ongoing; 0 or negative means it ended.
   return wars.filter((w) => w.turnsleft > 0).length;
 }
 
-// A nation can personally hide their resources (a privacy toggle on their
-// own account, not tied to alliance membership). PnW's API represents this
-// inconsistently — sometimes as -1, sometimes as null — so we treat both
-// the same way: "we can't check this," not a real value.
 function isHidden(value) {
   return value === -1 || value === null || value === undefined;
 }
@@ -52,29 +36,16 @@ const checks = [
     label: "Alliance Colour Bloc",
     recommendation: "Change your nation's color to match your alliance's bloc color.",
     run(nation, settings) {
-      // When this nation belongs to our own configured home alliance, use
-      // our configured bloc colour. Otherwise (auditing a foreign nation),
-      // use THEIR alliance's actual bloc colour — pre-fetched and attached
-      // as nation._ownAllianceColor before checks run (see runAudit.js).
-      // This avoids comparing a foreign nation against OUR colour, which
-      // would be meaningless.
       const isOwnAlliance = String(nation.alliance_id) === String(settings.alliance.id);
       const allianceColourRaw = isOwnAlliance ? settings.alliance.colour : nation._ownAllianceColor;
       const allianceColour = (allianceColourRaw || "").toLowerCase();
       const nationColour = (nation.color || "").toLowerCase();
-
-      if (!allianceColour) {
-        return { passed: true, detail: "No alliance colour to compare against — skipping." };
-      }
-      if (nationColour === "beige") {
-        return { passed: true, detail: "Nation is beige (post-war protection) — exempt until it expires." };
-      }
+      if (!allianceColour) return { passed: true, detail: "No alliance colour to compare against — skipping." };
+      if (nationColour === "beige") return { passed: true, detail: "Nation is beige (post-war protection) — exempt until it expires." };
       const passed = nationColour === allianceColour;
       return {
         passed,
-        detail: passed
-          ? `Nation is on bloc colour (${nation.color}).`
-          : `Nation is ${nation.color}, expected ${allianceColourRaw}.`
+        detail: passed ? `Nation is on bloc colour (${nation.color}).` : `Nation is ${nation.color}, expected ${allianceColourRaw}.`
       };
     }
   },
@@ -89,10 +60,7 @@ const checks = [
       }
       const activeOffensive = activeWarCount(nation.offensive_wars);
       const passed = activeOffensive >= requiredOffensiveWars;
-      return {
-        passed,
-        detail: `${activeOffensive}/${requiredOffensiveWars} active offensive wars.`
-      };
+      return { passed, detail: `${activeOffensive}/${requiredOffensiveWars} active offensive wars.` };
     }
   },
   {
@@ -100,27 +68,16 @@ const checks = [
     label: "Resource Control",
     recommendation: "Spend down the listed resources to stay within your warchest policy.",
     run(nation, settings) {
-      // A specific nation can have its own override policy (/set_member_warchest)
-      // for some or all resources; anything not overridden falls back to the
-      // alliance-wide policy (/set_warchest_policy).
       const policy = { ...settings.warchestPolicy, ...(settings.memberWarchestOverrides[String(nation.id)] || {}) };
-
-      // A nation can personally hide their resources (a privacy toggle on
-      // their own account, not tied to alliance membership) — when hidden,
-      // treat it as "can't check this," not as a real (and accidentally
-      // always-passing, or crash-causing) value.
       const hiddenResources = RESOURCE_FIELDS.filter((r) => isHidden(nation[r]));
       if (hiddenResources.length === RESOURCE_FIELDS.length) {
         return { passed: true, detail: "This nation has hidden their resources — can't check this." };
       }
-
-      // Warchest targets are set PER CITY, so the actual requirement for
-      // this nation is per-city amount × city count.
       const violations = [];
       for (const resource of RESOURCE_FIELDS) {
-        if (isHidden(nation[resource])) continue; // hidden, can't check
+        if (isHidden(nation[resource])) continue;
         const perCity = policy[resource];
-        if (perCity === undefined || perCity === null) continue; // not tracked
+        if (perCity === undefined || perCity === null) continue;
         const required = perCity * nation.num_cities;
         if (nation[resource] > required) {
           violations.push(
@@ -143,10 +100,7 @@ const checks = [
       const hoursSince = (Date.now() - lastActive.getTime()) / (1000 * 60 * 60);
       const limit = settings.activityLimitHours;
       const passed = hoursSince <= limit;
-      return {
-        passed,
-        detail: `Last active ${hoursSince.toFixed(1)} hours ago (limit: ${limit} hours).`
-      };
+      return { passed, detail: `Last active ${hoursSince.toFixed(1)} hours ago (limit: ${limit} hours).` };
     }
   },
   {
@@ -155,28 +109,21 @@ const checks = [
     recommendation: "Power the listed cities, and/or earn enough money to cover at least 1 day of military upkeep.",
     run(nation) {
       const unpowered = nation.cities.filter((c) => !c.powered).map((c) => c.name);
-
       const dailyCost =
         nation.soldiers * DAILY_UPKEEP.soldiers +
         nation.tanks * DAILY_UPKEEP.tanks +
         nation.aircraft * DAILY_UPKEEP.aircraft +
         nation.ships * DAILY_UPKEEP.ships;
-
-      // A nation can have hidden money (a personal privacy toggle) — we
-      // can't check upkeep for them, so don't penalize it.
       const moneyHidden = isHidden(nation.money);
       const hasUpkeep = moneyHidden || nation.money >= dailyCost;
-
       const problems = [];
       if (unpowered.length > 0) problems.push(`Unpowered: ${unpowered.join(", ")}`);
       if (!hasUpkeep) problems.push(`Money $${nation.money.toLocaleString()} < 1 day upkeep $${dailyCost.toLocaleString()}`);
-
       return {
         passed: problems.length === 0,
-        detail:
-          problems.length === 0
-            ? `All cities powered${moneyHidden ? " (money hidden, upkeep not checked)" : ", at least 1 day of upkeep available"}.`
-            : problems.join("; ")
+        detail: problems.length === 0
+          ? `All cities powered${moneyHidden ? " (money hidden, upkeep not checked)" : ", at least 1 day of upkeep available"}.`
+          : problems.join("; ")
       };
     }
   },
@@ -185,12 +132,13 @@ const checks = [
     label: "Military Fill Check",
     recommendation: "Train more units in the listed categories to use your full capacity.",
     run(nation) {
+      // Sum buildings across all cities to get total capacity
       const totals = { barracks: 0, factory: 0, hangar: 0, drydock: 0 };
       for (const city of nation.cities) {
-        totals.barracks += city.barracks;
-        totals.factory += city.factory;
-        totals.hangar += city.hangar;
-        totals.drydock += city.drydock;
+        totals.barracks += city.barracks || 0;
+        totals.factory += city.factory || 0;
+        totals.hangar += city.hangar || 0;
+        totals.drydock += city.drydock || 0;
       }
 
       const capacity = {
@@ -200,20 +148,27 @@ const checks = [
         ships: totals.drydock * CAPACITY_PER_BUILDING.drydock
       };
 
-      const fillPercent = (current, max) => (max === 0 ? 100 : Math.round((current / max) * 1000) / 10);
+      // Fill rate per branch: if no buildings, treat as 100% (nothing to fill)
+      const fillRate = (current, max) => max === 0 ? 1 : Math.min(1, current / max);
 
-      const percents = {
-        soldiers: fillPercent(nation.soldiers, capacity.soldiers),
-        tanks: fillPercent(nation.tanks, capacity.tanks),
-        aircraft: fillPercent(nation.aircraft, capacity.aircraft),
-        ships: fillPercent(nation.ships, capacity.ships)
+      const rates = {
+        soldiers: fillRate(nation.soldiers, capacity.soldiers),
+        tanks: fillRate(nation.tanks, capacity.tanks),
+        aircraft: fillRate(nation.aircraft, capacity.aircraft),
+        ships: fillRate(nation.ships, capacity.ships)
       };
 
-      const passed = Object.values(percents).every((p) => p >= 99.9);
+      // Average fill rate across all 4 branches
+      const avgRate = (rates.soldiers + rates.tanks + rates.aircraft + rates.ships) / 4;
+      const passed = avgRate >= 0.999; // fully filled (tiny float tolerance)
 
-      const detail = `Soldiers ${percents.soldiers}%, Tanks ${percents.tanks}%, Aircraft ${percents.aircraft}%, Ships ${percents.ships}%`;
+      const pct = (r) => (r * 100).toFixed(1);
+      const detail =
+        `Soldiers ${pct(rates.soldiers)}%, Tanks ${pct(rates.tanks)}%, ` +
+        `Aircraft ${pct(rates.aircraft)}%, Ships ${pct(rates.ships)}%` +
+        (passed ? "" : ` (avg ${pct(avgRate)}%)`);
 
-      return { passed, detail };
+      return { passed, partialScore: avgRate, detail };
     }
   },
   {
@@ -236,10 +191,14 @@ const checks = [
     recommendation: "Buy spies daily until you're back at your nation's spy cap.",
     run(nation) {
       const cap = nation.central_intelligence_agency ? 60 : 50;
+      const ratio = Math.min(1, nation.spies / cap);
       const passed = nation.spies >= cap;
       return {
         passed,
-        detail: passed ? `Spies are full (${nation.spies}/${cap}).` : `Spies are below cap (${nation.spies}/${cap}).`
+        partialScore: ratio,
+        detail: passed
+          ? `Spies are full (${nation.spies}/${cap}).`
+          : `Spies are below cap (${nation.spies}/${cap}).`
       };
     }
   }

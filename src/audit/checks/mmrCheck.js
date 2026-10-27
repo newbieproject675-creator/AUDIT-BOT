@@ -1,18 +1,12 @@
-// The MMR check now works differently from the original per-building check:
+// mmrCheck.js — Check 4: MMR with proportional/partial-credit scoring.
 //
-// 1. Every city must have EXACTLY 5 hangars — non-negotiable.
-// 2. The total of (barracks + factory + hangar + drydock) per city must be
-//    >= the configured minimum for the nation's city-count tier.
+// A city is compliant if it has exactly 5 hangars AND total military
+// buildings (barracks + factory + hangar + drydock) >= the configured
+// minimum for the tier.
 //
-// Members can freely distribute the remaining slots (after the 5 mandatory
-// hangars) across barracks, factories, and drydocks however they like —
-// as long as the total meets the minimum. This makes the policy flexible
-// while keeping aircraft builds strong.
-//
-// Example for 18-slot minimum:
-//   5/5/5/3 = 18 ✅   0/8/5/5 → impossible (max 5 per type)
-//   5/5/5/2 = 17 ❌   0/5/5/3 = 13 ❌ (if min is 18)
-//   0/13/5/0 → impossible   3/5/5/3 = 16 ❌ (if min is 18)
+// Scoring: proportional to compliant cities.
+//   partialScore = compliant cities / total cities
+// So 19/20 compliant cities earns 95% of max points, not zero.
 
 function mmrTierFor(numCities) {
   if (numCities <= 5) return "C1-C5";
@@ -20,6 +14,12 @@ function mmrTierFor(numCities) {
   if (numCities <= 15) return "C11-C15";
   if (numCities <= 20) return "C16-C20";
   return "C21+";
+}
+
+function isCityCompliant(city, minSlots) {
+  const hangarOk = city.hangar === 5;
+  const total = (city.barracks || 0) + (city.factory || 0) + (city.hangar || 0) + (city.drydock || 0);
+  return hangarOk && total >= minSlots;
 }
 
 const check4 = {
@@ -33,31 +33,40 @@ const check4 = {
     const minSlots = tierConfig?.minSlots;
 
     if (minSlots === undefined || minSlots === null) {
-      return { passed: true, detail: `No MMR configured for tier ${tier} — skipping.` };
+      return { passed: true, partialScore: 1, detail: `No MMR configured for tier ${tier} — skipping.` };
     }
 
-    const cityViolations = [];
+    const totalCities = nation.cities.length;
+    if (totalCities === 0) {
+      return { passed: true, partialScore: 1, detail: "No cities to check." };
+    }
+
+    const violations = [];
+    let compliantCount = 0;
 
     for (const city of nation.cities) {
-      const hangarViolation = city.hangar !== 5;
-      const total = (city.barracks || 0) + (city.factory || 0) + (city.hangar || 0) + (city.drydock || 0);
-      const totalViolation = total < minSlots;
-
-      if (hangarViolation || totalViolation) {
+      if (isCityCompliant(city, minSlots)) {
+        compliantCount += 1;
+      } else {
+        const hangarViolation = city.hangar !== 5;
+        const total = (city.barracks || 0) + (city.factory || 0) + (city.hangar || 0) + (city.drydock || 0);
+        const totalViolation = total < minSlots;
         const reasons = [];
         if (hangarViolation) reasons.push(`hangars: ${city.hangar}/5 required`);
         if (totalViolation) reasons.push(`total: ${total}/${minSlots} slots`);
-        cityViolations.push(`${city.name}: ${reasons.join(", ")}`);
+        violations.push(`${city.name}: ${reasons.join(", ")}`);
       }
     }
 
-    return {
-      passed: cityViolations.length === 0,
-      detail:
-        cityViolations.length === 0
-          ? `All cities meet the ${minSlots}-slot MMR for tier ${tier} (5 hangars + ${minSlots - 5} free).`
-          : `Tier ${tier} (min ${minSlots} slots, 5 hangars mandatory): ` + cityViolations.join("; ")
-    };
+    const partialScore = compliantCount / totalCities;
+    const passed = compliantCount === totalCities;
+
+    const detail = passed
+      ? `All ${totalCities} cities meet the ${minSlots}-slot MMR for tier ${tier}.`
+      : `${compliantCount}/${totalCities} cities compliant (tier ${tier}, min ${minSlots} slots, 5 hangars mandatory): ` +
+        violations.join("; ");
+
+    return { passed, partialScore, detail };
   }
 };
 
