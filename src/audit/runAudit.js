@@ -1,15 +1,12 @@
 // runAudit.js
 //
-// This is the shared "engine" used by every audit command (/infrastructure_land,
-// /build_slots_project, /others, /grand_audit). You give it:
-//   - the nation's data
-//   - a list of check definitions (each with a run() function)
-//   - the server's settings (for point values + grade thresholds)
-//   - a label for the report title and which command triggered it
+// Shared engine used by every audit command. Runs checks, totals points,
+// determines grade, builds the embed, and returns a history record.
 //
-// It runs every check, totals up the points, works out the grade tier
-// (Excellent / Passing / Needs Improvement / Failing), builds a nice
-// Discord embed, and returns a record we can save into audit history.
+// Partial-credit scoring: checks that return a numeric `partialScore`
+// (0.0–1.0) get that fraction of their max points instead of the binary
+// 0-or-max. Checks 4 (MMR), 18 (Military Fill), and 20 (Spy Count) use
+// this. All other checks remain binary pass/fail as before.
 
 const { EmbedBuilder } = require("discord.js");
 const { getGrade, isPassingGrade } = require("./grading");
@@ -18,7 +15,17 @@ function runChecks(nation, checkList, settings) {
   return checkList.map((check) => {
     const result = check.run(nation, settings);
     const maxPoints = settings.scores[check.key] ?? 0;
-    const earnedPoints = result.passed ? maxPoints : 0;
+
+    // If the check returned a partialScore (0.0–1.0), use proportional
+    // points. Otherwise fall back to binary pass/fail as always.
+    let earnedPoints;
+    if (typeof result.partialScore === "number") {
+      const ratio = Math.min(1, Math.max(0, result.partialScore));
+      earnedPoints = Math.round(maxPoints * ratio * 100) / 100;
+    } else {
+      earnedPoints = result.passed ? maxPoints : 0;
+    }
+
     return {
       key: check.key,
       label: check.label,
@@ -57,8 +64,10 @@ function buildReportEmbed(nation, results, settings, reportTitle, options = {}) 
     }
     if (fieldText.length > maxDetailLength) fieldText = fieldText.slice(0, maxDetailLength) + "...";
 
+    // Show decimal points when partial credit applies (e.g. 6.30/7 pts)
+    const earnedDisplay = Number.isInteger(r.earnedPoints) ? r.earnedPoints : r.earnedPoints.toFixed(2);
     embed.addFields({
-      name: `${icon} ${r.label} (${r.earnedPoints}/${r.maxPoints} pts)`,
+      name: `${icon} ${r.label} (${earnedDisplay}/${r.maxPoints} pts)`,
       value: fieldText
     });
   }
