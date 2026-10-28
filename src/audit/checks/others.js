@@ -1,26 +1,26 @@
-// others.js — Checks 12, 13, 14, 16, 17, 18, 19, 20.
+// others.js
 //
-// Checks 18 (Military Fill) and 20 (Spy Count) now use partial-credit
-// scoring via the partialScore field (0.0–1.0). All other checks remain
-// binary pass/fail unchanged.
+// Checks 12, 13, 14, 16, 17, 18, 19, 20.
+//
+// Partial-credit scoring (partialScore 0.0–1.0) applies to:
+//   Check 18 (Military Fill) — average fill rate across 4 branches
+//   Check 20 (Spy Count) — ratio of actual to required spies
+// All other checks remain binary pass/fail.
+//
+// Check 14 (Resource Control) now has a three-zone warchest system:
+//   EXCESS:  nation holds more than target (configured max) → fail, deposit advised
+//   PASS:    nation holds between target÷underDivisor and target
+//   LOW:     nation holds less than target÷underDivisor → fail, build up warchest
+// Both thresholds are configurable via /set_warchest_policy.
 
 const RESOURCE_FIELDS = [
-  "money", "food", "coal", "oil", "uranium", "lead", "iron", "bauxite", "gasoline", "munitions", "steel", "aluminum"
+  "money", "food", "coal", "oil", "uranium", "lead", "iron", "bauxite",
+  "gasoline", "munitions", "steel", "aluminum"
 ];
 
-const DAILY_UPKEEP = {
-  soldiers: 1.25,
-  tanks: 50,
-  aircraft: 500,
-  ships: 3375
-};
+const DAILY_UPKEEP = { soldiers: 1.25, tanks: 50, aircraft: 500, ships: 3375 };
 
-const CAPACITY_PER_BUILDING = {
-  barracks: 3000,
-  factory: 250,
-  hangar: 15,
-  drydock: 5
-};
+const CAPACITY_PER_BUILDING = { barracks: 3000, factory: 250, hangar: 15, drydock: 5 };
 
 function activeWarCount(wars) {
   return wars.filter((w) => w.turnsleft > 0).length;
@@ -66,28 +66,50 @@ const checks = [
   {
     key: "check14_resource_control",
     label: "Resource Control",
-    recommendation: "Spend down the listed resources to stay within your warchest policy.",
+    recommendation: "Adjust resources to stay within your warchest policy.",
     run(nation, settings) {
       const policy = { ...settings.warchestPolicy, ...(settings.memberWarchestOverrides[String(nation.id)] || {}) };
+
       const hiddenResources = RESOURCE_FIELDS.filter((r) => isHidden(nation[r]));
       if (hiddenResources.length === RESOURCE_FIELDS.length) {
         return { passed: true, detail: "This nation has hidden their resources — can't check this." };
       }
-      const violations = [];
+
+      // Configurable thresholds — how far below or above target triggers a fail.
+      // underDivisor: target/N is the low floor (default 4 = 4x below target fails)
+      // overMultiplier is removed — anything above target now fails immediately.
+      const underDivisor = settings.warchestUnderDivisor ?? 4;
+
+      const excessViolations = [];   // holding MORE than target → deposit in bank
+      const lowViolations = [];      // holding LESS than target÷underDivisor → dangerously low
+
       for (const resource of RESOURCE_FIELDS) {
         if (isHidden(nation[resource])) continue;
         const perCity = policy[resource];
         if (perCity === undefined || perCity === null) continue;
-        const required = perCity * nation.num_cities;
-        if (nation[resource] > required) {
-          violations.push(
-            `${resource}: ${nation[resource].toLocaleString()} > ${required.toLocaleString()} (${perCity.toLocaleString()}/city × ${nation.num_cities} cities)`
+
+        const target = perCity * nation.num_cities;           // the maximum allowed
+        const floor = target / underDivisor;                  // the minimum acceptable
+
+        const actual = nation[resource];
+
+        if (actual > target) {
+          excessViolations.push(
+            `${resource}: ${actual.toLocaleString()} > max ${target.toLocaleString()} — deposit excess in alliance bank`
+          );
+        } else if (actual < floor) {
+          lowViolations.push(
+            `${resource}: ${actual.toLocaleString()} < min ${Math.floor(floor).toLocaleString()} (target ${target.toLocaleString()} ÷ ${underDivisor})`
           );
         }
       }
+
+      const allViolations = [...excessViolations, ...lowViolations];
       return {
-        passed: violations.length === 0,
-        detail: violations.length === 0 ? "All tracked resources within policy." : violations.join("; ")
+        passed: allViolations.length === 0,
+        detail: allViolations.length === 0
+          ? "All tracked resources within warchest policy."
+          : allViolations.join("; ")
       };
     }
   },
@@ -132,7 +154,6 @@ const checks = [
     label: "Military Fill Check",
     recommendation: "Train more units in the listed categories to use your full capacity.",
     run(nation) {
-      // Sum buildings across all cities to get total capacity
       const totals = { barracks: 0, factory: 0, hangar: 0, drydock: 0 };
       for (const city of nation.cities) {
         totals.barracks += city.barracks || 0;
@@ -140,34 +161,26 @@ const checks = [
         totals.hangar += city.hangar || 0;
         totals.drydock += city.drydock || 0;
       }
-
       const capacity = {
         soldiers: totals.barracks * CAPACITY_PER_BUILDING.barracks,
         tanks: totals.factory * CAPACITY_PER_BUILDING.factory,
         aircraft: totals.hangar * CAPACITY_PER_BUILDING.hangar,
         ships: totals.drydock * CAPACITY_PER_BUILDING.drydock
       };
-
-      // Fill rate per branch: if no buildings, treat as 100% (nothing to fill)
       const fillRate = (current, max) => max === 0 ? 1 : Math.min(1, current / max);
-
       const rates = {
         soldiers: fillRate(nation.soldiers, capacity.soldiers),
         tanks: fillRate(nation.tanks, capacity.tanks),
         aircraft: fillRate(nation.aircraft, capacity.aircraft),
         ships: fillRate(nation.ships, capacity.ships)
       };
-
-      // Average fill rate across all 4 branches
       const avgRate = (rates.soldiers + rates.tanks + rates.aircraft + rates.ships) / 4;
-      const passed = avgRate >= 0.999; // fully filled (tiny float tolerance)
-
+      const passed = avgRate >= 0.999;
       const pct = (r) => (r * 100).toFixed(1);
       const detail =
         `Soldiers ${pct(rates.soldiers)}%, Tanks ${pct(rates.tanks)}%, ` +
         `Aircraft ${pct(rates.aircraft)}%, Ships ${pct(rates.ships)}%` +
         (passed ? "" : ` (avg ${pct(avgRate)}%)`);
-
       return { passed, partialScore: avgRate, detail };
     }
   },
