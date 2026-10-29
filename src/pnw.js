@@ -188,33 +188,9 @@ async function resolveAllianceId(input) {
 }
 
 
-// TEMPORARY — used only by /api_test to check for colour change timer field.
-const NATION_TEST_COLOUR_QUERY = `
-  query GetNationColourTest($id: [Int]) {
-    nations(id: $id, first: 1) {
-      data {
-        id
-        nation_name
-        color
-        turns_since_last_city
-        turns_since_last_project
-        turns_since_last_color
-        color_turns
-        last_color_change
-      }
-    }
-  }
-`;
-
-async function getNationTestColour(nationId) {
-  const data = await queryPNW(NATION_TEST_COLOUR_QUERY, { id: [nationId] });
-  const nation = data?.nations?.data?.[0];
-  if (!nation) throw new Error(`No nation found with ID ${nationId}.`);
-  return nation;
-}
 
 module.exports = {
   queryPNW, getNation, getAllianceNations, resolveNationId,
   isActiveMember, verifyPersonalApiKey, getAllianceName,
-  getAllianceColor, resolveAllianceId, getNationTestColour
+  getAllianceColor, resolveAllianceId
 };
