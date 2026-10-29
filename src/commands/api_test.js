@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require("discord.js");
-const { getNationTestColour } = require("../pnw");
+const { getNation } = require("../pnw");
 
 module.exports = {
   minTier: "administrator",
@@ -13,7 +13,7 @@ module.exports = {
   async execute(interaction) {
     await interaction.deferReply();
     try {
-      const nation = await getNationTestColour(interaction.options.getInteger("nation_id"));
+      const nation = await getNation(interaction.options.getInteger("nation_id"));
       await interaction.editReply(
         `✅ API test succeeded:\n\`\`\`json\n${JSON.stringify(nation, null, 2)}\n\`\`\``
       );
