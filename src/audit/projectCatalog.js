@@ -10,7 +10,7 @@
 // Names marked "confirmed" were checked against the live game data earlier in
 // this project. The rest follow the same naming pattern, and the newest ones
 // are from memory. The bot double-checks every name against the live game
-// data when you save your order (/set_project_order), so a wrong name is
+// data (/set_project_order and /view_project_order), so a wrong name is
 // reported straight away instead of causing a wrong recommendation.
 
 const PROJECTS = [
@@ -67,8 +67,35 @@ const PROJECTS = [
   { key: "nuclear_launch_facility", name: "Nuclear Launch Facility" },
   { key: "government_support_agency", name: "Government Support Agency" },
   { key: "bureau_of_domestic_affairs", name: "Bureau of Domestic Affairs" },
-  { key: "resource_production_center", name: "Resource Production Center" }
+  { key: "resource_production_center", name: "Resource Production Center" },
+  { key: "military_research_center", name: "Military Research Center" },
+  { key: "military_doctrine", name: "Military Doctrine" }
 ];
+
+// The game's continent codes. Africa ("af") is confirmed; the others follow
+// the same pattern. Spellings like "North America" or "NA" are all accepted.
+const CONTINENT_NAMES = {
+  af: "Africa",
+  na: "North America",
+  sa: "South America",
+  eu: "Europe",
+  as: "Asia",
+  au: "Australia",
+  an: "Antarctica"
+};
+const CONTINENT_LOOKUP = {
+  af: "af", africa: "af",
+  na: "na", northamerica: "na",
+  sa: "sa", southamerica: "sa",
+  eu: "eu", europe: "eu",
+  as: "as", asia: "as",
+  au: "au", australia: "au", oceania: "au",
+  an: "an", antarctica: "an"
+};
+
+function continentCode(text) {
+  return CONTINENT_LOOKUP[String(text || "").toLowerCase().replace(/[^a-z]/g, "")] || null;
+}
 
 // "Urban Planning", "urban planning" and "URBAN-PLANNING" all become "urbanplanning".
 function normalize(text) {
@@ -133,4 +160,4 @@ function findProject(text) {
   return { project: null, suggestions: closest };
 }
 
-module.exports = { PROJECTS, projectByKey, findProject, normalize };
+module.exports = { PROJECTS, projectByKey, findProject, normalize, continentCode, CONTINENT_NAMES };
