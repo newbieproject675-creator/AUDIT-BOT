@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { resolveNationInput } = require("../audit/resolveNationInput");
-const { fetchNationProjects, buildRecommendations } = require("../audit/projectPlan");
+const { fetchNationProjects, buildRecommendations, getPlanEntries, rangeLabel } = require("../audit/projectPlan");
+const { continentCode, CONTINENT_NAMES } = require("../audit/projectCatalog");
 const { getSettings } = require("../db");
 
 const MAX_OVERDUE_SHOWN = 20;
@@ -29,9 +30,9 @@ module.exports = {
     await interaction.deferReply();
 
     const settings = getSettings(interaction.guildId);
-    const entries = settings.projectPlan?.entries || [];
+    const entries = getPlanEntries(settings);
     if (entries.length === 0) {
-      await interaction.editReply("❌ No project order has been set yet. An administrator can set one with `/set_project_order`.");
+      await interaction.editReply("❌ No project order is available. An administrator can set one with `/set_project_order`.");
       return;
     }
 
@@ -53,10 +54,11 @@ module.exports = {
 
     const cities = nation.num_cities;
     const upcomingToShow = interaction.options.getInteger("count") ?? 3;
-    const rec = buildRecommendations(cities, built, unverified, entries);
+    const rec = buildRecommendations({ numCities: cities, continent: nation.continent }, built, unverified, entries);
+    const continentName = CONTINENT_NAMES[continentCode(nation.continent)];
 
     const lines = [
-      `**${nation.nation_name}** · C${cities} · ${nation.projects} project(s) built in total`,
+      `**${nation.nation_name}** · C${cities}${continentName ? ` · ${continentName}` : ""} · ${nation.projects} project(s) built in total`,
       `Plan progress: **${rec.built.length}/${rec.applicable}** planned projects built`
     ];
 
@@ -64,7 +66,9 @@ module.exports = {
       lines.push("", "⚠️ **Overdue — buy these first**");
       for (const item of rec.overdue.slice(0, MAX_OVERDUE_SHOWN)) {
         const gap = cities - item.atCity;
-        lines.push(`• **${item.name}** — was due at C${item.atCity} (overdue by ${gap} ${cityWord(gap)})`);
+        lines.push(
+          `• **${item.name}** — meant for ${rangeLabel(item.fromCity, item.atCity)} (overdue by ${gap} ${cityWord(gap)})`
+        );
       }
       if (rec.overdue.length > MAX_OVERDUE_SHOWN) {
         lines.push(`…and ${rec.overdue.length - MAX_OVERDUE_SHOWN} more overdue.`);
@@ -74,12 +78,12 @@ module.exports = {
     if (rec.upcoming.length > 0) {
       lines.push("", "🟢 **Up next**");
       for (const item of rec.upcoming.slice(0, upcomingToShow)) {
-        const gap = item.atCity - cities;
-        lines.push(
-          gap === 0
-            ? `• **${item.name}** — due now (C${item.atCity})`
-            : `• **${item.name}** — due at C${item.atCity} (in ${gap} ${cityWord(gap)})`
-        );
+        if (item.inRange) {
+          lines.push(`• **${item.name}** — buy now (meant for ${rangeLabel(item.fromCity, item.atCity)})`);
+        } else {
+          const gap = item.fromCity - cities;
+          lines.push(`• **${item.name}** — available from C${item.fromCity} (in ${gap} ${cityWord(gap)})`);
+        }
       }
       if (rec.upcoming.length > upcomingToShow) {
         lines.push(`…and ${rec.upcoming.length - upcomingToShow} more later in the plan.`);
@@ -96,6 +100,10 @@ module.exports = {
         `⚠️ Couldn't check: ${rec.unverified.map((i) => i.name).join(", ")}. The game's data didn't recognise ` +
           "these, so they're left out - please tell an administrator."
       );
+    }
+
+    if (rec.otherContinent.length > 0) {
+      lines.push("", `ℹ️ Not for this nation's continent: ${rec.otherContinent.join(", ")}.`);
     }
 
     const embed = new EmbedBuilder()

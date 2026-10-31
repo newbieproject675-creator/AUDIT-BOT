@@ -6,7 +6,7 @@ const {
   ActionRowBuilder,
   MessageFlags
 } = require("discord.js");
-const { parsePlanText, formatPlanText, verifyProjectKeys } = require("../audit/projectPlan");
+const { parsePlanText, formatPlanText, getPlanEntries, verifyProjectKeys } = require("../audit/projectPlan");
 const { projectByKey } = require("../audit/projectCatalog");
 const { getSettings, saveSettings } = require("../db");
 
@@ -23,18 +23,19 @@ module.exports = {
   modalCustomId: MODAL_CUSTOM_ID,
   data: new SlashCommandBuilder()
     .setName("set_project_order")
-    .setDescription("Set the order projects should be bought in, by city count (opens a form)."),
+    .setDescription("Edit the order projects should be bought in, by city range (opens a form)."),
 
   async execute(interaction) {
     const settings = getSettings(interaction.guildId);
-    const saved = formatPlanText(settings.projectPlan?.entries || []);
-    const prefill = unsavedDrafts.get(interaction.user.id) ?? saved;
+    // Opens with your saved order, or the built-in default if you haven't saved one yet.
+    const current = formatPlanText(getPlanEntries(settings));
+    const prefill = unsavedDrafts.get(interaction.user.id) ?? current;
 
     const input = new TextInputBuilder()
       .setCustomId(INPUT_CUSTOM_ID)
-      .setLabel("One project per line: city count - name")
+      .setLabel("City range - project name (one per line)")
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder("C5 - Center for Civil Engineering\nC10 - Urban Planning")
+      .setPlaceholder("C1-C10 - Intelligence Agency\nC12-C20 - Bauxiteworks [Africa]")
       .setRequired(true)
       .setMaxLength(4000);
     if (prefill) input.setValue(prefill.slice(0, 4000));
@@ -93,9 +94,9 @@ module.exports = {
         "`/next_project` checks them each time it runs.";
     }
 
-    const cityCounts = new Set(entries.map((e) => e.atCity)).size;
+    const ranges = new Set(entries.map((e) => `${e.fromCity ?? e.atCity}-${e.atCity}`)).size;
     await interaction.editReply(
-      `✅ Saved **${entries.length}** project(s) across **${cityCounts}** city count(s).\n${verification}\n\n` +
+      `✅ Saved **${entries.length}** project(s) across **${ranges}** city range(s).\n${verification}\n\n` +
         "Use `/view_project_order` to see it, and `/next_project` to check a nation."
     );
   }
