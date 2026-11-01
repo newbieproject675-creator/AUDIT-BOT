@@ -82,7 +82,12 @@ module.exports = {
       if (unknown.length === 0) {
         verification = "✅ Every project name matched the game's data.";
       } else {
-        const names = unknown.map((key) => `**${projectByKey(key)?.name ?? key}** (\`${key}\`)`).join(", ");
+        const names = unknown
+          .map((key) => {
+            const hint = unknown.hints?.[key]?.length ? ` - the game suggests ${unknown.hints[key].map((h) => `\`${h}\``).join(", ")}` : "";
+            return `**${projectByKey(key)?.name ?? key}** (\`${key}\`${hint})`;
+          })
+          .join(", ");
         verification =
           `⚠️ The game's data didn't recognise: ${names}.\n` +
           "They're saved, but they'll be left out of recommendations (and flagged) until the name is corrected - " +

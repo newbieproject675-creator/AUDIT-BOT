@@ -94,6 +94,12 @@ module.exports = {
       lines.push("", "🎉 Every project in the plan has already been built.");
     }
 
+    if (rec.built.length > 0) {
+      let builtList = rec.built.map((i) => i.name).join(", ");
+      if (builtList.length > 700) builtList = builtList.slice(0, 697) + "...";
+      lines.push("", `✅ **Already built from the plan (${rec.built.length}):** ${builtList}`);
+    }
+
     if (rec.unverified.length > 0) {
       lines.push(
         "",
