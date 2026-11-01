@@ -18,7 +18,7 @@
 // otherwise the built-in default below is used.
 
 const { queryPNW } = require("../pnw");
-const { projectByKey, findProject, continentCode, CONTINENT_NAMES } = require("./projectCatalog");
+const { projectByKey, canonicalKey, findProject, continentCode, CONTINENT_NAMES } = require("./projectCatalog");
 
 const MAX_CITY_COUNT = 200;
 
@@ -203,7 +203,9 @@ function hasSavedPlan(settings) {
 }
 
 function getPlanEntries(settings) {
-  return hasSavedPlan(settings) ? settings.projectPlan.entries : DEFAULT_ENTRIES;
+  const entries = hasSavedPlan(settings) ? settings.projectPlan.entries : DEFAULT_ENTRIES;
+  // Plans saved earlier may hold an old project key; swap in the corrected one.
+  return entries.map((entry) => ({ ...entry, key: canonicalKey(entry.key) }));
 }
 
 // ---------------------------------------------------------------------------
@@ -216,15 +218,20 @@ function getPlanEntries(settings) {
 async function queryWithFieldHealing(buildQuery, keys, variables) {
   let remaining = [...keys];
   const unknown = [];
+  const hints = {}; // rejected field -> the game's own "did you mean" suggestions
 
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       const data = await queryPNW(buildQuery(remaining), variables);
-      return { data, unknown };
+      return { data, unknown, hints };
     } catch (error) {
-      const rejected = [...String(error.message).matchAll(/Cannot query field "([^"]+)" on type "Nation"/g)]
-        .map((m) => m[1])
-        .filter((field) => remaining.includes(field));
+      const rejected = [];
+      for (const part of String(error.message).replace(/^PnW API error:\s*/, "").split(" | ")) {
+        const match = part.trim().match(/^Cannot query field "([^"]+)" on type "Nation"\.?(?:\s*Did you mean (.*?)\??)?\s*$/);
+        if (!match || !remaining.includes(match[1])) continue;
+        rejected.push(match[1]);
+        if (match[2]) hints[match[1]] = [...match[2].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+      }
       if (rejected.length === 0) throw error;
       unknown.push(...rejected);
       remaining = remaining.filter((key) => !rejected.includes(key));
@@ -237,18 +244,20 @@ async function fetchNationProjects(nationId, keys) {
   const buildQuery = (fields) =>
     `query NationProjects($id: [Int]) { nations(id: $id, first: 1) { data { id nation_name num_cities continent projects ${fields.join(" ")} } } }`;
 
-  const { data, unknown } = await queryWithFieldHealing(buildQuery, keys, { id: [nationId] });
+  const { data, unknown, hints } = await queryWithFieldHealing(buildQuery, keys, { id: [nationId] });
   const nation = data?.nations?.data?.[0];
   if (!nation) throw new Error(`No nation found with ID ${nationId}.`);
 
   const built = new Set(keys.filter((key) => !unknown.includes(key) && nation[key] === true));
-  return { nation, built, unverified: new Set(unknown) };
+  return { nation, built, unverified: new Set(unknown), hints };
 }
 
-// Which of these project names does the game not know?
+// Which of these project names does the game not know? Returns the list of
+// unknown field names; the game's suggestions (if any) are on list.hints.
 async function verifyProjectKeys(keys) {
   const buildQuery = (fields) => `query VerifyProjects { nations(first: 1) { data { id ${fields.join(" ")} } } }`;
-  const { unknown } = await queryWithFieldHealing(buildQuery, keys, {});
+  const { unknown, hints } = await queryWithFieldHealing(buildQuery, keys, {});
+  unknown.hints = hints;
   return unknown;
 }
 
@@ -268,7 +277,18 @@ function buildRecommendations({ numCities, continent }, built, unverified, entri
 
   for (const entry of sortEntries(entries)) {
     const project = projectByKey(entry.key);
-    if (!project) continue;
+    if (!project) {
+      // Not a project we recognise: flag it instead of silently dropping it.
+      result.applicable += 1;
+      result.unverified.push({
+        key: entry.key,
+        name: entry.key,
+        fromCity: entry.fromCity ?? entry.atCity,
+        atCity: entry.atCity,
+        inRange: false
+      });
+      continue;
+    }
     if (project.maxCities != null && numCities > project.maxCities) continue;
     if (entry.continents?.length && !entry.continents.includes(nationContinent)) {
       result.otherContinent.push(project.name);

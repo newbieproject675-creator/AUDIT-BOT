@@ -1,76 +1,87 @@
 // projectCatalog.js
 //
-// Every project the bot knows about:
+// Every project the bot knows about, taken from TUN's list of the projects
+// currently in the game (plus two TUN confirmed that the list missed):
 //   key       = the field name the Politics & War API uses for that project
 //   name      = how the project is displayed
 //   aliases   = other spellings an admin might type
 //   maxCities = (optional) the project is useless above this many cities, so
 //               it is NEVER recommended to a bigger nation
 //
-// Names marked "confirmed" were checked against the live game data earlier in
-// this project. The rest follow the same naming pattern, and the newest ones
-// are from memory. The bot double-checks every name against the live game
-// data (/set_project_order and /view_project_order), so a wrong name is
-// reported straight away instead of causing a wrong recommendation.
+// The project NAMES are confirmed by the current in-game list. The API field
+// names marked "confirmed" were checked against the live game data earlier in
+// this project; the rest follow the same naming pattern. The bot double-checks
+// every name against the live game data (/set_project_order and
+// /view_project_order), so a wrong field name is reported straight away
+// instead of causing a wrong recommendation.
 
 const PROJECTS = [
-  // --- Confirmed against the live game data ---
-  { key: "green_technologies", name: "Green Technologies" },
-  { key: "mass_irrigation", name: "Mass Irrigation" },
-  { key: "recycling_initiative", name: "Recycling Initiative" },
-  { key: "activity_center", name: "Activity Center", maxCities: 20 },
-  { key: "center_for_civil_engineering", name: "Center for Civil Engineering", aliases: ["Civil Engineering Center", "CCE"] },
-  { key: "arable_land_agency", name: "Arable Land Agency" },
+  { key: "green_technologies", name: "Green Technologies" }, // confirmed
+  { key: "advanced_engineering_corps", name: "Advanced Engineering Corps" },
+  { key: "arms_stockpile", name: "Arms Stockpile" },
+  { key: "uranium_enrichment_program", name: "Uranium Enrichment Program" },
+  { key: "ironworks", name: "Ironworks" },
+  { key: "emergency_gasoline_reserve", name: "Emergency Gasoline Reserve" },
+  { key: "bauxiteworks", name: "Bauxiteworks" },
+  { key: "mass_irrigation", name: "Mass Irrigation" }, // confirmed
+  { key: "center_for_civil_engineering", name: "Center for Civil Engineering", aliases: ["Civil Engineering Center", "CCE"] }, // confirmed
+  { key: "arable_land_agency", name: "Arable Land Agency" }, // confirmed
+  { key: "nuclear_research_facility", name: "Nuclear Research Facility" },
+  { key: "nuclear_launch_facility", name: "Nuclear Launch Facility" },
+  { key: "guiding_satellite", name: "Guiding Satellite" },
+  { key: "activity_center", name: "Activity Center", maxCities: 20 }, // confirmed
+  { key: "mars_landing", name: "Mars Landing" },
+  { key: "clinical_research_center", name: "Clinical Research Center" },
+  { key: "fallout_shelter", name: "Fallout Shelter" },
+  { key: "government_support_agency", name: "Government Support Agency" },
+  { key: "international_trade_center", name: "International Trade Center" },
+  { key: "iron_dome", name: "Iron Dome" },
+  { key: "military_salvage", name: "Military Salvage" },
+  { key: "recycling_initiative", name: "Recycling Initiative" }, // confirmed
+  { key: "missile_launch_pad", name: "Missile Launch Pad" },
+  { key: "moon_landing", name: "Moon Landing" },
   {
-    key: "research_and_development_center",
+    key: "research_and_development_center", // confirmed
     name: "Research and Development Center",
     aliases: ["R&D Center", "R and D Center", "Research & Development Center"]
   },
-  { key: "central_intelligence_agency", name: "Central Intelligence Agency", aliases: ["CIA"] },
-
-  // --- Same naming pattern as the confirmed ones ---
-  { key: "advanced_engineering_corps", name: "Advanced Engineering Corps" },
-  { key: "advanced_urban_planning", name: "Advanced Urban Planning" },
-  { key: "arms_stockpile", name: "Arms Stockpile" },
-  { key: "bauxiteworks", name: "Bauxiteworks" },
-  { key: "clinical_research_center", name: "Clinical Research Center" },
-  { key: "emergency_gasoline_reserve", name: "Emergency Gasoline Reserve" },
-  { key: "fallout_shelter", name: "Fallout Shelter" },
-  { key: "intelligence_agency", name: "Intelligence Agency" },
-  { key: "international_trade_center", name: "International Trade Center" },
-  { key: "iron_dome", name: "Iron Dome" },
-  { key: "ironworks", name: "Ironworks" },
-  { key: "metropolitan_planning", name: "Metropolitan Planning" },
-  { key: "military_salvage", name: "Military Salvage" },
-  { key: "missile_launch_pad", name: "Missile Launch Pad" },
-  { key: "moon_landing", name: "Moon Landing" },
-  { key: "nuclear_research_facility", name: "Nuclear Research Facility" },
   { key: "pirate_economy", name: "Pirate Economy" },
   { key: "propaganda_bureau", name: "Propaganda Bureau" },
-  { key: "space_program", name: "Space Program" },
+  { key: "advanced_pirate_economy", name: "Advanced Pirate Economy" },
+  { key: "surveillance_network", name: "Surveillance Network" },
+  { key: "bureau_of_domestic_affairs", name: "Bureau of Domestic Affairs" },
+  // The in-game "Intelligence Agency" is the project the game's data calls
+  // central_intelligence_agency (confirmed; it's the one that raises the spy cap to 60).
+  {
+    key: "central_intelligence_agency",
+    name: "Intelligence Agency",
+    aliases: ["Central Intelligence Agency", "CIA"]
+  },
+  { key: "vital_defense_system", name: "Vital Defense System" },
+  { key: "telecommunications_satellite", name: "Telecommunications Satellite", aliases: ["Telecommunication Satellite"] },
+  { key: "spy_satellite", name: "Spy Satellite" },
   {
     key: "specialized_police_training_program",
     name: "Specialized Police Training Program",
     aliases: ["Police Training Program"]
   },
-  { key: "spy_satellite", name: "Spy Satellite" },
-  { key: "telecommunications_satellite", name: "Telecommunications Satellite", aliases: ["Telecommunication Satellite"] },
-  { key: "uranium_enrichment_program", name: "Uranium Enrichment Program" },
-  { key: "urban_planning", name: "Urban Planning" },
-  { key: "vital_defense_system", name: "Vital Defense System" },
+  { key: "space_program", name: "Space Program" },
 
-  // --- Newer projects, names from memory (not yet verified) ---
-  { key: "advanced_pirate_economy", name: "Advanced Pirate Economy" },
-  { key: "mars_landing", name: "Mars Landing" },
-  { key: "surveillance_network", name: "Surveillance Network" },
-  { key: "guiding_satellite", name: "Guiding Satellite" },
-  { key: "nuclear_launch_facility", name: "Nuclear Launch Facility" },
-  { key: "government_support_agency", name: "Government Support Agency" },
-  { key: "bureau_of_domestic_affairs", name: "Bureau of Domestic Affairs" },
-  { key: "resource_production_center", name: "Resource Production Center" },
+  // Real in-game projects (TUN confirmed a nation has both built) that were
+  // missing from the list above. Their field names follow the usual pattern
+  // and are checked against the live game data.
   { key: "military_research_center", name: "Military Research Center" },
   { key: "military_doctrine", name: "Military Doctrine" }
 ];
+
+// Older plan entries saved under a key that turned out to be wrong.
+const LEGACY_KEYS = {
+  intelligence_agency: "central_intelligence_agency"
+};
+
+function canonicalKey(key) {
+  return LEGACY_KEYS[key] || key;
+}
 
 // The game's continent codes. Africa ("af") is confirmed; the others follow
 // the same pattern. Spellings like "North America" or "NA" are all accepted.
@@ -111,7 +122,7 @@ const LOOKUP = PROJECTS.map((project) => ({
 }));
 
 function projectByKey(key) {
-  return BY_KEY.get(key) || null;
+  return BY_KEY.get(canonicalKey(key)) || null;
 }
 
 function editDistance(a, b) {
@@ -160,4 +171,12 @@ function findProject(text) {
   return { project: null, suggestions: closest };
 }
 
-module.exports = { PROJECTS, projectByKey, findProject, normalize, continentCode, CONTINENT_NAMES };
+module.exports = {
+  PROJECTS,
+  projectByKey,
+  canonicalKey,
+  findProject,
+  normalize,
+  continentCode,
+  CONTINENT_NAMES
+};
