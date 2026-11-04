@@ -45,12 +45,12 @@ module.exports = {
       verification =
         unknown.length === 0
           ? "✅ All project names match the game's data."
-          : `⚠️ The game's data doesn't recognise: ${unknown
+          : `⚠️ Couldn't find the game's data field for: ${unknown
               .map((key) => {
                 const hint = unknown.hints?.[key]?.length ? ` (game suggests ${unknown.hints[key].join(", ")})` : "";
                 return `${projectByKey(key)?.name ?? key}${hint}`;
               })
-              .join(", ")}. These are left out of recommendations until fixed.`;
+              .join(", ")}. (The bot is probably using the wrong internal name.) These are left out of recommendations until fixed.`;
     } catch (error) {
       verification = "ℹ️ Couldn't double-check the project names against the game just now.";
     }

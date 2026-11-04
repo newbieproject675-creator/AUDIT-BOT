@@ -103,8 +103,8 @@ module.exports = {
     if (rec.unverified.length > 0) {
       lines.push(
         "",
-        `⚠️ Couldn't check: ${rec.unverified.map((i) => i.name).join(", ")}. The game's data didn't recognise ` +
-          "these, so they're left out - please tell an administrator."
+        `⚠️ Couldn't check: ${rec.unverified.map((i) => i.name).join(", ")} - the bot couldn't find these in the ` +
+          "game's data (likely a wrong internal name), so they're left out. Please tell an administrator."
       );
     }
 

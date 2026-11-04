@@ -89,9 +89,9 @@ module.exports = {
           })
           .join(", ");
         verification =
-          `⚠️ The game's data didn't recognise: ${names}.\n` +
-          "They're saved, but they'll be left out of recommendations (and flagged) until the name is corrected - " +
-          "send this message to whoever maintains the bot.";
+          `⚠️ Couldn't find the game's data field for: ${names}.\n` +
+          "The projects themselves are fine - the bot is probably using the wrong internal name. They're saved, " +
+          "but left out of recommendations (and flagged) until it's corrected - send this message to whoever maintains the bot.";
       }
     } catch (error) {
       verification =
