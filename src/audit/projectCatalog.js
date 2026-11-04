@@ -20,9 +20,9 @@ const PROJECTS = [
   { key: "advanced_engineering_corps", name: "Advanced Engineering Corps" },
   { key: "arms_stockpile", name: "Arms Stockpile" },
   { key: "uranium_enrichment_program", name: "Uranium Enrichment Program" },
-  { key: "ironworks", name: "Ironworks" },
+  { key: "iron_works", name: "Ironworks", aliases: ["Iron Works"] },
   { key: "emergency_gasoline_reserve", name: "Emergency Gasoline Reserve" },
-  { key: "bauxiteworks", name: "Bauxiteworks" },
+  { key: "bauxite_works", name: "Bauxiteworks", aliases: ["Bauxite Works"] },
   { key: "mass_irrigation", name: "Mass Irrigation" }, // confirmed
   { key: "center_for_civil_engineering", name: "Center for Civil Engineering", aliases: ["Civil Engineering Center", "CCE"] }, // confirmed
   { key: "arable_land_agency", name: "Arable Land Agency" }, // confirmed
@@ -76,7 +76,9 @@ const PROJECTS = [
 
 // Older plan entries saved under a key that turned out to be wrong.
 const LEGACY_KEYS = {
-  intelligence_agency: "central_intelligence_agency"
+  intelligence_agency: "central_intelligence_agency",
+  ironworks: "iron_works",
+  bauxiteworks: "bauxite_works"
 };
 
 function canonicalKey(key) {

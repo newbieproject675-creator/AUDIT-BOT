@@ -213,28 +213,44 @@ function getPlanEntries(settings) {
 // ---------------------------------------------------------------------------
 
 // If the game doesn't recognise one of the project field names, the whole
-// request fails. Instead of failing, drop the unknown field(s), try again, and
-// report which ones were unknown - so we never mistake "unknown" for "not built".
+// request fails. Instead of failing, work out which field(s) it rejected and:
+//   - if the game suggests the SAME letters with different underscores
+//     (e.g. "ironworks" -> "iron_works"), switch to that spelling and carry on;
+//   - otherwise drop the field and report it as unknown.
+// Either way we never mistake "unknown" for "not built".
 async function queryWithFieldHealing(buildQuery, keys, variables) {
-  let remaining = [...keys];
+  const fieldFor = Object.fromEntries(keys.map((key) => [key, key])); // plan key -> field being asked for
+  const tried = Object.fromEntries(keys.map((key) => [key, new Set([key])]));
   const unknown = [];
-  const hints = {}; // rejected field -> the game's own "did you mean" suggestions
+  const hints = {}; // plan key -> the game's own "did you mean" suggestions
+  const squash = (text) => String(text).replace(/_/g, "");
 
-  for (let attempt = 0; attempt < 5; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     try {
-      const data = await queryPNW(buildQuery(remaining), variables);
-      return { data, unknown, hints };
+      const data = await queryPNW(buildQuery(Object.values(fieldFor)), variables);
+      return { data, unknown, hints, fieldFor };
     } catch (error) {
-      const rejected = [];
+      let changed = false;
       for (const part of String(error.message).replace(/^PnW API error:\s*/, "").split(" | ")) {
         const match = part.trim().match(/^Cannot query field "([^"]+)" on type "Nation"\.?(?:\s*Did you mean (.*?)\??)?\s*$/);
-        if (!match || !remaining.includes(match[1])) continue;
-        rejected.push(match[1]);
-        if (match[2]) hints[match[1]] = [...match[2].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+        if (!match) continue;
+        const key = Object.keys(fieldFor).find((k) => fieldFor[k] === match[1]);
+        if (!key) continue;
+
+        const suggestions = match[2] ? [...match[2].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : [];
+        if (suggestions.length > 0) hints[key] = suggestions;
+
+        const sameLetters = suggestions.find((s) => squash(s) === squash(match[1]) && !tried[key].has(s));
+        if (sameLetters) {
+          fieldFor[key] = sameLetters;
+          tried[key].add(sameLetters);
+        } else {
+          unknown.push(key);
+          delete fieldFor[key];
+        }
+        changed = true;
       }
-      if (rejected.length === 0) throw error;
-      unknown.push(...rejected);
-      remaining = remaining.filter((key) => !rejected.includes(key));
+      if (!changed) throw error;
     }
   }
   throw new Error("The game's data kept rejecting the project names - please try again later.");
@@ -244,11 +260,11 @@ async function fetchNationProjects(nationId, keys) {
   const buildQuery = (fields) =>
     `query NationProjects($id: [Int]) { nations(id: $id, first: 1) { data { id nation_name num_cities continent projects ${fields.join(" ")} } } }`;
 
-  const { data, unknown, hints } = await queryWithFieldHealing(buildQuery, keys, { id: [nationId] });
+  const { data, unknown, hints, fieldFor } = await queryWithFieldHealing(buildQuery, keys, { id: [nationId] });
   const nation = data?.nations?.data?.[0];
   if (!nation) throw new Error(`No nation found with ID ${nationId}.`);
 
-  const built = new Set(keys.filter((key) => !unknown.includes(key) && nation[key] === true));
+  const built = new Set(keys.filter((key) => fieldFor[key] && nation[fieldFor[key]] === true));
   return { nation, built, unverified: new Set(unknown), hints };
 }
 
