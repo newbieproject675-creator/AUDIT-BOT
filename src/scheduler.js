@@ -8,6 +8,7 @@ const { runTierRoleSyncForGuild } = require("./audit/tierRoleSync");
 const { runUnscRotation } = require("./audit/unscRotation");
 const { runDailyAuditForGuild } = require("./audit/dailyAudit");
 const { runIaAlertsForGuild } = require("./audit/iaAlerts");
+const { runCooldownAlertsForGuild } = require("./audit/cooldownAlerts");
 
 const TICK_INTERVAL_MS = 15 * 60 * 1000;
 const STARTUP_GRACE_MS = 5 * 60 * 1000;
@@ -30,6 +31,23 @@ async function runJob(lockKey, label, fn) {
     console.log(`[${label}] Starting scheduled run...`);
     const result = await fn();
     console.log(`[${label}] Done:`, JSON.stringify(result));
+  } catch (error) {
+    console.error(`[${label}] Error:`, error.message);
+  } finally {
+    currentlyRunning.delete(lockKey);
+  }
+}
+
+// Like runJob, but for a job that runs on EVERY tick: it stays silent in the
+// logs unless it actually posted something or hit a problem.
+async function runQuietJob(lockKey, label, fn) {
+  if (currentlyRunning.has(lockKey)) return;
+  currentlyRunning.add(lockKey);
+  try {
+    const result = await fn();
+    if (result && (result.alertsSent > 0 || result.errors > 0)) {
+      console.log(`[${label}]`, JSON.stringify(result));
+    }
   } catch (error) {
     console.error(`[${label}] Error:`, error.message);
   } finally {
@@ -100,6 +118,19 @@ async function tick(client) {
       await runJob(`${guild.id}:iaAlerts`, "iaAlerts", async () => {
         const stats = await runIaAlertsForGuild(client, guild, settings, guild.id);
         settings.iaAlerts.lastRunAt = new Date().toISOString();
+        saveSettings(guild.id, settings);
+        return stats;
+      });
+    }
+
+    // Cooldown alerts - checked every tick so a ready nation is announced
+    // within ~15 minutes of its cooldown ending.
+    const cooldown = settings.cooldownAlerts;
+    if ((cooldown?.projectEnabled || cooldown?.cityEnabled) && cooldown.roleId && cooldown.channelId &&
+        cooldown.nations?.length > 0) {
+      await runQuietJob(`${guild.id}:cooldownAlerts`, "cooldownAlerts", async () => {
+        const stats = await runCooldownAlertsForGuild(client, guild, settings);
+        settings.cooldownAlerts.lastRunAt = new Date().toISOString();
         saveSettings(guild.id, settings);
         return stats;
       });
