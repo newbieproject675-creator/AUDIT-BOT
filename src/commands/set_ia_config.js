@@ -26,6 +26,8 @@ module.exports = {
     .addIntegerOption((opt) => opt.setName("min_audits").setDescription("Minimum audits required before a recommendation, e.g. 7").setMinValue(1))
     .addIntegerOption((opt) => opt.setName("failure_rate").setDescription("% of audits failing to trigger a recommendation, e.g. 75").setMinValue(1).setMaxValue(100))
     .addIntegerOption((opt) => opt.setName("cooldown_days").setDescription("Days before re-alerting on the same nation, e.g. 7").setMinValue(1))
+    .addBooleanOption((opt) => opt.setName("inactivity_alerts").setDescription("Recommend removal of nations inactive too long, on or off"))
+    .addIntegerOption((opt) => opt.setName("inactivity_days").setDescription("Recommend removal after more than this many days inactive, e.g. 8").setMinValue(1))
     .addRoleOption((opt) => opt.setName("ia_role").setDescription("The IA Minister role to ping"))
     .addChannelOption((opt) => opt.setName("ia_channel").setDescription("Channel to post recommendations in").addChannelTypes(ChannelType.GuildText)),
 
@@ -47,6 +49,8 @@ module.exports = {
     const minAudits = interaction.options.getInteger("min_audits");
     const failureRate = interaction.options.getInteger("failure_rate");
     const cooldownDays = interaction.options.getInteger("cooldown_days");
+    const inactivityAlerts = interaction.options.getBoolean("inactivity_alerts");
+    const inactivityDays = interaction.options.getInteger("inactivity_days");
     const iaRole = interaction.options.getRole("ia_role");
     const iaChannel = interaction.options.getChannel("ia_channel");
 
@@ -56,6 +60,8 @@ module.exports = {
     if (minAudits !== null) ia.minAudits = minAudits;
     if (failureRate !== null) ia.failureRateThreshold = failureRate;
     if (cooldownDays !== null) ia.cooldownDays = cooldownDays;
+    if (inactivityAlerts !== null) ia.inactivityEnabled = inactivityAlerts;
+    if (inactivityDays !== null) ia.inactivityDays = inactivityDays;
     if (iaRole) ia.iaRoleId = iaRole.id;
     if (iaChannel) ia.iaChannelId = iaChannel.id;
 
@@ -71,6 +77,7 @@ module.exports = {
           `**Min audits required:** ${ia.minAudits}\n` +
           `**Failure rate threshold:** ${ia.failureRateThreshold}%\n` +
           `**Alert cooldown:** ${ia.cooldownDays} days\n` +
+          `**Inactivity recommendations:** ${ia.inactivityEnabled === false ? "OFF" : `ON (more than ${ia.inactivityDays ?? 8} days inactive)`}\n` +
           `**IA role:** ${ia.iaRoleId ? `<@&${ia.iaRoleId}>` : "Not set"}\n` +
           `**IA channel:** ${ia.iaChannelId ? `<#${ia.iaChannelId}>` : "Not set"}\n\n` +
           "💡 The daily audit must be ON for IA alerts to have enough data to work accurately."

@@ -24,7 +24,7 @@ module.exports = {
       return;
     }
 
-    if ((settings.auditHistory || []).length === 0) {
+    if ((settings.auditHistory || []).length === 0 && settings.iaAlerts.inactivityEnabled === false) {
       await interaction.editReply(
         "❌ No audit history on file yet. Enable the silent daily audit with `/set_ia_config daily_audit_enabled:True` " +
           "and wait at least a few days for data to accumulate, or run `/run_daily_audit` manually now to start."
@@ -43,7 +43,9 @@ module.exports = {
         `**Analysed:** ${stats.checked} nation(s) with recent history\n` +
         `**Recommendations posted:** ${stats.recommended}\n` +
         `**Skipped (on cooldown):** ${stats.skippedCooldown}\n` +
-        `**Skipped (insufficient data):** ${stats.skippedData}`
+        `**Skipped (insufficient data):** ${stats.skippedData}\n` +
+        `**Inactive nations recommended:** ${stats.inactiveRecommended ?? 0} (of ${stats.inactiveChecked ?? 0} members checked)` +
+        (stats.errors ? `\n⚠️ ${stats.errors} problem(s) - see the Railway log.` : "")
     );
   }
 };
