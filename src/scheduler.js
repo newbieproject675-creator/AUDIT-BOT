@@ -9,6 +9,8 @@ const { runUnscRotation } = require("./audit/unscRotation");
 const { runDailyAuditForGuild } = require("./audit/dailyAudit");
 const { runIaAlertsForGuild } = require("./audit/iaAlerts");
 const { runCooldownAlertsForGuild } = require("./audit/cooldownAlerts");
+const { runVmGuardForGuild } = require("./audit/vmGuard");
+const { loadVmGuard } = require("./audit/vmGuardStore");
 
 const TICK_INTERVAL_MS = 15 * 60 * 1000;
 const STARTUP_GRACE_MS = 5 * 60 * 1000;
@@ -134,6 +136,20 @@ async function tick(client) {
         saveSettings(guild.id, settings);
         return stats;
       });
+    }
+
+    // VM guard - checked about hourly. It keeps its data in its own file, so
+    // (unlike the jobs above) it does NOT save the shared settings object.
+    try {
+      const vm = loadVmGuard(guild.id);
+      if (vm.enabled && settings.alliance.id && vm.iaRoleId && vm.iaChannelId &&
+          isDue(vm.lastRunAt, 45 * 60 * 1000)) {
+        await runQuietJob(`${guild.id}:vmGuard`, "vmGuard", () =>
+          runVmGuardForGuild(client, guild, settings.alliance.id)
+        );
+      }
+    } catch (error) {
+      console.error("[vmGuard] Couldn't start the check:", error.message);
     }
   }
 }
