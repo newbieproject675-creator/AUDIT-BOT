@@ -9,28 +9,53 @@
 //
 // Every run just makes everyone's role match reality, regardless of why
 // it was wrong before.
+//
+// Members whose roles were removed by the VM guard are skipped, so this
+// doesn't hand their tier role straight back while they're in VM.
 
 const { getAllianceNations } = require("../pnw");
 const { resolveGuildMember } = require("./resolveDiscordUser");
 const { tierKeyFor } = require("./tiers");
+const { loadVmGuard } = require("./vmGuardStore");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function runTierRoleSyncForGuild(client, guild, settings) {
-  const stats = { checked: 0, updated: 0, alreadyCorrect: 0, skippedNoDiscord: 0, skippedNoRoleConfigured: 0, roleErrors: 0 };
+  const stats = {
+    checked: 0,
+    updated: 0,
+    alreadyCorrect: 0,
+    skippedNoDiscord: 0,
+    skippedNoRoleConfigured: 0,
+    skippedVmStripped: 0,
+    roleErrors: 0
+  };
 
   if (!settings.alliance.id) return stats;
 
   const { members } = await getAllianceNations(settings.alliance.id);
   stats.checked = members.length;
 
+  // Nations whose roles are currently removed by the VM guard.
+  let strippedIds = new Set();
+  try {
+    strippedIds = new Set(Object.keys(loadVmGuard(guild.id).stripped));
+  } catch (error) {
+    console.error("[tierRoleSync] Couldn't read the VM guard data:", error.message);
+  }
+
   // Every role ID currently configured across all 5 tiers — used to spot
   // and remove a STALE tier role someone has from a tier they've outgrown.
   const allConfiguredRoleIds = Object.values(settings.tierRoles).filter(Boolean);
 
   for (const nation of members) {
+    if (strippedIds.has(String(nation.id))) {
+      stats.skippedVmStripped += 1;
+      continue;
+    }
+
     const tierKey = tierKeyFor(nation.num_cities);
     const correctRoleId = tierKey ? settings.tierRoles[tierKey] : null;
 

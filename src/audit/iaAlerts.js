@@ -16,6 +16,7 @@
 const { EmbedBuilder } = require("discord.js");
 const { isPassingGrade } = require("./grading");
 const { saveSettings } = require("../db");
+const { queryPNW } = require("../pnw");
 
 function isFailing(record, settings) {
   // Uses the same grade system the rest of the bot uses — "Failing" is
@@ -72,9 +73,123 @@ function analyseNation(nationId, nationName, auditHistory, settings) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Inactivity trigger: a nation that has not been active in the game for more
+// than `inactivityDays` (default 8) is recommended for removal, separately
+// from the audit-failure trigger above. Nations in Vacation Mode are skipped
+// (they are away on purpose, and the VM guard deals with long VMs).
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 86400000;
+const ACTIVITY_QUERY = `
+  query AllianceActivity($allianceId: [Int], $page: Int) {
+    nations(alliance_id: $allianceId, first: 50, page: $page) {
+      paginatorInfo { hasMorePages currentPage }
+      data { id nation_name num_cities alliance_position vacation_mode_turns last_active }
+    }
+  }
+`;
+
+async function fetchAllianceActivity(allianceId) {
+  const members = [];
+  let page = 1;
+  let more = true;
+  while (more) {
+    const data = await queryPNW(ACTIVITY_QUERY, { allianceId: [Number(allianceId)], page });
+    const result = data?.nations;
+    if (!result) break;
+    members.push(...result.data);
+    more = result.paginatorInfo?.hasMorePages ?? false;
+    page += 1;
+  }
+  // Applicants aren't members yet.
+  return members.filter((n) => (n.alliance_position || "").toUpperCase() !== "APPLICANT");
+}
+
+async function runInactivityRecommendations(channel, settings, stats) {
+  const config = settings.iaAlerts;
+  const days = config.inactivityDays ?? 8;
+  const now = Date.now();
+  const cooldownMs = (config.cooldownDays ?? 7) * DAY_MS;
+  if (!config.lastAlertedNations) config.lastAlertedNations = {};
+
+  const members = await fetchAllianceActivity(settings.alliance.id);
+  stats.inactiveChecked = members.length;
+
+  const flagged = [];
+  for (const nation of members) {
+    if (Number(nation.vacation_mode_turns) > 0) continue;
+    const lastActive = new Date(nation.last_active).getTime();
+    if (!nation.last_active || Number.isNaN(lastActive)) continue;
+    const inactiveDays = (now - lastActive) / DAY_MS;
+    if (inactiveDays <= days) continue;
+
+    // A separate key from the audit-failure alerts, so one doesn't hide the other.
+    const key = `${nation.id}:inactive`;
+    const alertedAt = config.lastAlertedNations[key];
+    if (alertedAt && now - new Date(alertedAt).getTime() < cooldownMs) {
+      stats.skippedCooldown += 1;
+      continue;
+    }
+    flagged.push({ nation, inactiveDays, lastActive, key });
+  }
+  if (flagged.length === 0) return;
+
+  flagged.sort((a, b) => b.inactiveDays - a.inactiveDays); // most inactive first
+
+  const lines = flagged.map(
+    ({ nation, inactiveDays, lastActive }) =>
+      `• [${nation.nation_name}](https://politicsandwar.com/nation/id=${nation.id}) · C${nation.num_cities} — ` +
+      `inactive **${Math.floor(inactiveDays)} days** (last active <t:${Math.floor(lastActive / 1000)}:R>)`
+  );
+
+  // Group into messages that stay well under Discord's size limits.
+  const batches = [];
+  let current = [];
+  let length = 0;
+  flagged.forEach((item, index) => {
+    if (current.length > 0 && length + lines[index].length + 1 > 3500) {
+      batches.push(current);
+      current = [];
+      length = 0;
+    }
+    current.push({ item, line: lines[index] });
+    length += lines[index].length + 1;
+  });
+  if (current.length > 0) batches.push(current);
+
+  let first = true;
+  for (const batch of batches) {
+    const embed = new EmbedBuilder()
+      .setTitle(first ? "💤 IA Removal Recommendation — inactive nations" : "💤 IA Removal Recommendation — inactive nations (cont.)")
+      .setColor(0xe67e22)
+      .setDescription(
+        (first
+          ? `**${flagged.length}** nation(s) have been inactive for more than **${days} days** (Vacation Mode excluded). Removal is recommended.\n\n`
+          : "") + batch.map((b) => b.line).join("\n")
+      )
+      .setFooter({ text: `Threshold: ${days} days of inactivity. Change it with /set_ia_config inactivity_days.` });
+
+    try {
+      await channel.send(
+        first
+          ? { content: `<@&${config.iaRoleId}>`, embeds: [embed], allowedMentions: { roles: [config.iaRoleId] } }
+          : { embeds: [embed] }
+      );
+      first = false;
+      for (const { item } of batch) config.lastAlertedNations[item.key] = new Date().toISOString();
+      stats.inactiveRecommended += batch.length;
+    } catch (error) {
+      stats.errors += 1;
+      console.error(`[iaAlerts] Couldn't post the inactivity recommendation:`, error.message);
+      break;
+    }
+  }
+}
+
 async function runIaAlertsForGuild(client, guild, settings, guildId) {
   const config = settings.iaAlerts;
-  const stats = { checked: 0, recommended: 0, skippedCooldown: 0, skippedData: 0 };
+  const stats = { checked: 0, recommended: 0, skippedCooldown: 0, skippedData: 0, inactiveChecked: 0, inactiveRecommended: 0, errors: 0 };
 
   if (!config.iaChannelId || !config.iaRoleId) return stats;
 
@@ -135,6 +250,16 @@ async function runIaAlertsForGuild(client, guild, settings, guildId) {
       settings.iaAlerts.lastAlertedNations[String(nationId)] = new Date().toISOString();
     } catch (error) {
       console.error(`[iaAlerts] Failed to post alert for nation ${nationId}:`, error.message);
+    }
+  }
+
+  // Inactivity trigger (on by default). A failure here must not undo the audit part above.
+  if (config.inactivityEnabled !== false && settings.alliance?.id) {
+    try {
+      await runInactivityRecommendations(channel, settings, stats);
+    } catch (error) {
+      stats.errors += 1;
+      console.error("[iaAlerts] Inactivity check failed:", error.message);
     }
   }
 
